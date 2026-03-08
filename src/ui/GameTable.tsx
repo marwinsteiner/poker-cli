@@ -4,7 +4,6 @@ import chalk from 'chalk';
 import type { GameState, PlayerAction, AvailableAction, AnimationPhase } from '../engine/types.js';
 import { getAvailableActions, isRoundComplete } from '../engine/betting.js';
 import { getAIAction } from '../ai/ai-player.js';
-import { gameReducer } from '../engine/game-state.js';
 import { PlayerArea } from './PlayerArea.js';
 import { CommunityCards } from './CommunityCards.js';
 import { PotDisplay } from './PotDisplay.js';
@@ -30,6 +29,7 @@ export function GameTable({ state, dispatch, onGameOver }: GameTableProps) {
   const [displayPot, setDisplayPot] = useState(state.pot);
   const processingRef = useRef(false);
   const handStartedRef = useRef(false);
+  const gameOverRef = useRef(false);
 
   // Sync display pot
   useEffect(() => {
@@ -154,7 +154,8 @@ export function GameTable({ state, dispatch, onGameOver }: GameTableProps) {
 
     // Hand complete → check game over or start next
     if (state.isHandComplete) {
-      if (state.players[0].chips === 0 || state.players[1].chips === 0) {
+      if ((state.players[0].chips === 0 || state.players[1].chips === 0) && !gameOverRef.current) {
+        gameOverRef.current = true;
         setTimeout(() => onGameOver(), 2000);
         return;
       }
