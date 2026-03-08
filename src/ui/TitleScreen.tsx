@@ -62,12 +62,12 @@ export function TitleScreen({ onStart }: TitleScreenProps) {
         <Text>
           {configField === 0 ? chalk.green.bold('> ') : '  '}
           Starting Chips: {chalk.yellow(`$${chips}`)}
-          {configField === 0 ? chalk.dimColor(' [←/→ adjust]') : ''}
+          {configField === 0 ? chalk.dim(' [←/→ adjust]') : ''}
         </Text>
         <Text>
           {configField === 1 ? chalk.green.bold('> ') : '  '}
           Small Blind:    {chalk.yellow(`$${blind}`)}
-          {configField === 1 ? chalk.dimColor(' [←/→ adjust]') : ''}
+          {configField === 1 ? chalk.dim(' [←/→ adjust]') : ''}
         </Text>
       </Box>
 

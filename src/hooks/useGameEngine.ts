@@ -7,7 +7,7 @@ export function useGameEngine(startingChips: number, smallBlind: number) {
 
   const resetGame = useCallback((newChips?: number, newBlind?: number) => {
     dispatch({
-      type: 'SET_CONFIG',
+      type: 'RESET_GAME',
       startingChips: newChips ?? startingChips,
       smallBlind: newBlind ?? smallBlind,
     });

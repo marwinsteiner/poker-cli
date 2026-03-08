@@ -82,6 +82,10 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       };
     }
 
+    case 'RESET_GAME': {
+      return createInitialState(action.startingChips, action.smallBlind);
+    }
+
     case 'START_NEW_HAND': {
       const newDealerIndex = state.handNumber === 0 ? 0 : (1 - state.dealerIndex);
       const newDeck = shuffle(createDeck());

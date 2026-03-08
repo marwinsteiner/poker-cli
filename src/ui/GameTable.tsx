@@ -93,11 +93,7 @@ export function GameTable({ state, dispatch, onGameOver }: GameTableProps) {
           return;
         }
 
-        // Both all-in? Run out remaining cards
-        const bothAllIn = state.players[0].isAllIn && state.players[1].isAllIn;
-        const oneAllIn = state.players[0].isAllIn || state.players[1].isAllIn;
-
-        if (state.street === 'river' || (bothAllIn && state.street === 'river')) {
+        if (state.street === 'river') {
           // Showdown
           processingRef.current = true;
           setTimeout(() => {
