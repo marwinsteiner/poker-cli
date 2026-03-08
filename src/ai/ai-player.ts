@@ -57,7 +57,16 @@ export function getAIAction(state: GameState): PlayerAction {
     }
   }
 
-  // Fallback: pick the safest available action
+  // Fallback: map strategy to closest available action
+  // If strategy says "call" but only "allin" is available, consider strength
+  if (actionType === 'call' || actionType === 'raise') {
+    const allinAction = available.find(a => a.type === 'allin');
+    if (allinAction && strength > 0.4) {
+      return { type: 'allin', amount: aiPlayer.chips };
+    }
+  }
+
+  // Default fallbacks
   const checkAction = available.find(a => a.type === 'check');
   if (checkAction) return { type: 'check' };
 
