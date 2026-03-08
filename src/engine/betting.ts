@@ -22,17 +22,28 @@ export function getAvailableActions(state: GameState): AvailableAction[] {
   // Call if there's a bet
   if (toCall > 0) {
     const callAmount = Math.min(toCall, player.chips);
-    if (callAmount < player.chips) {
-      actions.push({ type: 'call', label: `Call $${callAmount}`, callAmount });
+    if (callAmount >= player.chips) {
+      // Calling costs all chips = call all-in
+      actions.push({
+        type: 'allin',
+        label: `Call All-In $${player.chips + player.currentBet}`,
+        minRaise: callAmount,
+        maxRaise: callAmount,
+      });
+      return actions; // Can't raise if calling is already all-in
     }
+    actions.push({ type: 'call', label: `Call $${callAmount}`, callAmount });
   }
 
-  // Raise/Bet
+  // Raise/Bet (only if player has chips beyond calling)
+  const chipsAfterCall = player.chips - toCall;
+  if (chipsAfterCall <= 0) return actions;
+
   const minRaiseTotal = opponent.currentBet + Math.max(state.minRaise, state.bigBlind);
   const raiseMin = Math.min(minRaiseTotal - player.currentBet, player.chips);
   const raiseMax = player.chips;
 
-  if (raiseMax > toCall && raiseMax > 0) {
+  if (raiseMax > toCall) {
     if (raiseMin >= raiseMax) {
       // Can only go all-in
       actions.push({

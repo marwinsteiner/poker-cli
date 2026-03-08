@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
-import chalk from 'chalk';
 import type { AvailableAction, PlayerAction } from '../engine/types.js';
 
 interface ActionMenuProps {
@@ -12,6 +11,10 @@ interface ActionMenuProps {
 
 export function ActionMenu({ actions, isActive, onSelect, onRaiseStart }: ActionMenuProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
+
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [actions.length]);
 
   useInput((input, key) => {
     if (!isActive) return;
