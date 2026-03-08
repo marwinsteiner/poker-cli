@@ -1,0 +1,31 @@
+{
+  "name": "poker-cli",
+  "version": "1.0.0",
+  "description": "CLI Heads-Up No-Limit Texas Hold'em",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.tsx",
+    "build": "tsc",
+    "dev": "tsx watch src/index.tsx"
+  },
+  "keywords": [
+    "poker",
+    "cli",
+    "terminal",
+    "game"
+  ],
+  "author": "marwinsteiner",
+  "license": "MIT",
+  "dependencies": {
+    "chalk": "^5.6.2",
+    "figlet": "^1.10.0",
+    "ink": "^6.8.0",
+    "react": "^19.2.4"
+  },
+  "devDependencies": {
+    "@types/figlet": "^1.7.0",
+    "@types/react": "^19.2.14",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}
