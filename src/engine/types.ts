@@ -71,8 +71,11 @@ export interface ShowdownResult {
 
 export type GameMode = 'headsup' | 'cash' | 'tournament';
 
+export type LLMProvider = 'api' | 'external';
+
 export interface LLMPlayerConfig {
   enabled: boolean;
+  provider: LLMProvider;
   model: string;
   displayName: string;
 }

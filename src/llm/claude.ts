@@ -1,8 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type { GameState } from '../engine/types.js';
+import type { GameState, LLMPlayerConfig } from '../engine/types.js';
 import { getAvailableActions } from '../engine/betting.js';
 import { buildGamePrompt, parseResponse, SYSTEM_PROMPT } from './prompt.js';
-import type { LLMConfig, LLMDecision } from './types.js';
+import { getExternalDecision } from './file-bridge.js';
+import type { LLMDecision } from './types.js';
 
 let client: Anthropic | null = null;
 
@@ -13,7 +14,7 @@ function getClient(): Anthropic {
   return client;
 }
 
-export async function getLLMDecision(state: GameState, config: LLMConfig): Promise<LLMDecision> {
+async function getAPIDecision(state: GameState, config: LLMPlayerConfig): Promise<LLMDecision> {
   const anthropic = getClient();
   const prompt = buildGamePrompt(state);
   const availableActions = getAvailableActions(state);
@@ -33,4 +34,11 @@ export async function getLLMDecision(state: GameState, config: LLMConfig): Promi
     .join('\n');
 
   return parseResponse(responseText, availableActions);
+}
+
+export async function getLLMDecision(state: GameState, config: LLMPlayerConfig): Promise<LLMDecision> {
+  if (config.provider === 'external') {
+    return getExternalDecision(state);
+  }
+  return getAPIDecision(state, config);
 }

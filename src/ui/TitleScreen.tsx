@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
 import chalk from 'chalk';
 import figlet from 'figlet';
-import type { GameConfig, GameMode, BlindLevel } from '../engine/types.js';
+import type { GameConfig, GameMode, LLMProvider } from '../engine/types.js';
 import { getBlindSchedule, type BlindSpeed } from '../engine/blind-schedule.js';
+import { getBridgeDir } from '../llm/file-bridge.js';
 
 interface TitleScreenProps {
   onStart: (config: GameConfig) => void;
@@ -17,12 +18,15 @@ const MODE_OPTIONS: { mode: GameMode; label: string; desc: string }[] = [
   { mode: 'tournament', label: 'Tournament', desc: 'Increasing blinds, last one standing wins' },
 ];
 
-const LLM_MODEL_OPTIONS = [
-  { model: 'claude-opus-4-6', display: 'Claude Opus 4.6' },
-  { model: 'claude-sonnet-4-6', display: 'Claude Sonnet 4.6' },
-  { model: 'claude-opus-4-20250514', display: 'Claude Opus 4' },
-  { model: 'claude-sonnet-4-20250514', display: 'Claude Sonnet 4' },
-  { model: 'claude-haiku-4-5-20251001', display: 'Claude Haiku 4.5' },
+// index 0 = External Agent (file bridge, no API key needed)
+// index 1+ = API models (require ANTHROPIC_API_KEY)
+const LLM_OPTIONS: { provider: LLMProvider; model: string; display: string }[] = [
+  { provider: 'external', model: 'external', display: 'External Agent (file bridge)' },
+  { provider: 'api', model: 'claude-opus-4-6', display: 'Claude Opus 4.6 (API)' },
+  { provider: 'api', model: 'claude-sonnet-4-6', display: 'Claude Sonnet 4.6 (API)' },
+  { provider: 'api', model: 'claude-opus-4-20250514', display: 'Claude Opus 4 (API)' },
+  { provider: 'api', model: 'claude-sonnet-4-20250514', display: 'Claude Sonnet 4 (API)' },
+  { provider: 'api', model: 'claude-haiku-4-5-20251001', display: 'Claude Haiku 4.5 (API)' },
 ];
 
 const hasApiKey = !!process.env['ANTHROPIC_API_KEY'];
@@ -42,11 +46,12 @@ export function TitleScreen({ onStart }: TitleScreenProps) {
   const [blindSpeed, setBlindSpeed] = useState<BlindSpeed>('normal');
   const [actionTimer, setActionTimer] = useState(30);
   const [llmEnabled, setLlmEnabled] = useState(false);
-  const [llmModelIndex, setLlmModelIndex] = useState(0);
+  const [llmOptionIndex, setLlmOptionIndex] = useState(0);
   const [configField, setConfigField] = useState(0);
   const [buttonIndex, setButtonIndex] = useState(0);
 
   const selectedMode = MODE_OPTIONS[modeIndex]!.mode;
+  const selectedLlm = LLM_OPTIONS[llmOptionIndex]!;
 
   useEffect(() => {
     try {
@@ -72,7 +77,7 @@ export function TitleScreen({ onStart }: TitleScreenProps) {
         break;
     }
     base.push('llmPlayer');
-    if (llmEnabled) base.push('llmModel');
+    if (llmEnabled) base.push('llmOption');
     base.push('buttons');
     return base;
   };
@@ -113,7 +118,7 @@ export function TitleScreen({ onStart }: TitleScreenProps) {
       }
       else if (currentFieldName === 'actionTimer') setActionTimer(prev => prev === 30 ? 15 : prev === 60 ? 30 : 15);
       else if (currentFieldName === 'llmPlayer') setLlmEnabled(prev => !prev);
-      else if (currentFieldName === 'llmModel') setLlmModelIndex(prev => Math.max(0, prev - 1));
+      else if (currentFieldName === 'llmOption') setLlmOptionIndex(prev => Math.max(0, prev - 1));
       else if (currentFieldName === 'buttons') setButtonIndex(prev => Math.max(0, prev - 1));
     } else if (key.rightArrow) {
       if (currentFieldName === 'chips') setChips(prev => Math.min(10000, prev + 100));
@@ -124,7 +129,7 @@ export function TitleScreen({ onStart }: TitleScreenProps) {
       }
       else if (currentFieldName === 'actionTimer') setActionTimer(prev => prev === 15 ? 30 : prev === 30 ? 60 : 60);
       else if (currentFieldName === 'llmPlayer') setLlmEnabled(prev => !prev);
-      else if (currentFieldName === 'llmModel') setLlmModelIndex(prev => Math.min(LLM_MODEL_OPTIONS.length - 1, prev + 1));
+      else if (currentFieldName === 'llmOption') setLlmOptionIndex(prev => Math.min(LLM_OPTIONS.length - 1, prev + 1));
       else if (currentFieldName === 'buttons') setButtonIndex(prev => Math.min(1, prev + 1));
     } else if (key.return) {
       if (currentFieldName === 'llmPlayer') {
@@ -143,11 +148,11 @@ export function TitleScreen({ onStart }: TitleScreenProps) {
             config.actionTimerSeconds = actionTimer;
           }
           if (llmEnabled) {
-            const selectedModel = LLM_MODEL_OPTIONS[llmModelIndex]!;
             config.llmPlayer = {
               enabled: true,
-              model: selectedModel.model,
-              displayName: selectedModel.display,
+              provider: selectedLlm.provider,
+              model: selectedLlm.model,
+              displayName: selectedLlm.provider === 'external' ? 'External Agent' : selectedLlm.display.replace(' (API)', ''),
             };
           }
           onStart(config);
@@ -244,22 +249,28 @@ export function TitleScreen({ onStart }: TitleScreenProps) {
                 const statusText = llmEnabled
                   ? chalk.green.bold('ON')
                   : chalk.dim('OFF');
-                const keyHint = !hasApiKey && isActive
-                  ? chalk.red(' (set ANTHROPIC_API_KEY)')
-                  : '';
                 return (
                   <Text key={field}>
-                    {prefix}LLM Player: {statusText}{keyHint}
+                    {prefix}LLM Player: {statusText}
                     {isActive ? chalk.dim(' [Enter/Left/Right toggle]') : ''}
                   </Text>
                 );
               }
-              if (field === 'llmModel') {
-                const model = LLM_MODEL_OPTIONS[llmModelIndex]!;
+              if (field === 'llmOption') {
+                const needsKey = selectedLlm.provider === 'api' && !hasApiKey;
                 return (
-                  <Text key={field}>
-                    {prefix}Model: {chalk.magenta(model.display)}{hint}
-                  </Text>
+                  <Box key={field} flexDirection="column">
+                    <Text>
+                      {prefix}Agent: {chalk.magenta(selectedLlm.display)}
+                      {needsKey ? chalk.red(' (needs ANTHROPIC_API_KEY)') : ''}
+                      {hint}
+                    </Text>
+                    {isActive && selectedLlm.provider === 'external' && (
+                      <Text dimColor>
+                        {'    Bridge dir: '}{getBridgeDir()}
+                      </Text>
+                    )}
+                  </Box>
                 );
               }
               if (field === 'buttons') {
