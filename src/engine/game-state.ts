@@ -1,15 +1,26 @@
-import type { GameState, GameAction, Player, Street } from './types.js';
+import type { GameState, GameAction, Player, Street, GameConfig, ShowdownResult } from './types.js';
 import { createDeck, shuffle, deal } from './deck.js';
 import { evaluateBestHand, compareHands } from './hand-evaluator.js';
-import { DEFAULT_STARTING_CHIPS, DEFAULT_SMALL_BLIND, DEFAULT_BIG_BLIND } from './constants.js';
+import { DEFAULT_STARTING_CHIPS, DEFAULT_SMALL_BLIND } from './constants.js';
+import { getNextActiveSeat, getNextNonEliminatedSeat, getSBSeat, getBBSeat, getFirstToActPreflop, getFirstToActPostflop } from './positions.js';
+import { calculateSidePots, awardPots } from './side-pots.js';
+import { assignPersonalities } from '../ai/personalities.js';
 
-function createPlayer(id: 'human' | 'ai', name: string, chips: number): Player {
+function createPlayer(
+  seatIndex: number,
+  name: string,
+  chips: number,
+  isHuman: boolean,
+): Player {
   return {
-    id,
+    seatIndex,
     name,
+    isHuman,
+    isEliminated: false,
     chips,
     holeCards: [],
     currentBet: 0,
+    totalHandBet: 0,
     hasFolded: false,
     hasActed: false,
     isAllIn: false,
@@ -17,37 +28,55 @@ function createPlayer(id: 'human' | 'ai', name: string, chips: number): Player {
   };
 }
 
-export function createInitialState(startingChips?: number, smallBlind?: number): GameState {
-  const chips = startingChips ?? DEFAULT_STARTING_CHIPS;
-  const sb = smallBlind ?? DEFAULT_SMALL_BLIND;
+export function createInitialState(config?: GameConfig): GameState {
+  const mode = config?.mode ?? 'headsup';
+  const playerCount = config?.playerCount ?? 2;
+  const chips = config?.startingChips ?? DEFAULT_STARTING_CHIPS;
+  const sb = config?.smallBlind ?? DEFAULT_SMALL_BLIND;
+
+  // Create players: seat 0 = human, seats 1+ = AI with personalities
+  const players: Player[] = [];
+  players.push(createPlayer(0, 'You', chips, true));
+
+  const aiCount = playerCount - 1;
+  const personalities = assignPersonalities(aiCount);
+  for (let i = 0; i < aiCount; i++) {
+    const p = createPlayer(i + 1, personalities[i]!.name, chips, false);
+    p.personality = personalities[i]!;
+    players.push(p);
+  }
+
   return {
-    players: [
-      createPlayer('human', 'You', chips),
-      createPlayer('ai', 'Dealer', chips),
-    ],
+    players,
+    playerCount,
+    mode,
     communityCards: [],
     deck: [],
-    pot: 0,
+    pots: [],
     street: 'preflop',
     currentPlayerIndex: 0,
-    dealerIndex: 0, // alternates each hand
+    dealerIndex: 0,
     smallBlind: sb,
     bigBlind: sb * 2,
     lastRaiseSize: sb * 2,
     minRaise: sb * 2,
     handNumber: 0,
     isHandComplete: false,
-    winner: null,
-    winningHand: null,
-    losingHand: null,
+    winnerSeatIndices: null,
+    showdownResults: null,
     showdownRequired: false,
     messageLog: [],
+    eliminationOrder: [],
+    blindSchedule: config?.blindSchedule,
+    currentBlindLevel: config?.blindSchedule ? 0 : undefined,
+    actionTimerSeconds: config?.actionTimerSeconds,
   };
 }
 
 function addLog(state: GameState, message: string): string[] {
+  const maxMessages = state.playerCount > 2 ? 8 : 5;
   const log = [...state.messageLog, message];
-  return log.slice(-5); // keep last 5
+  return log.slice(-maxMessages);
 }
 
 function nextStreet(street: Street): Street | null {
@@ -71,103 +100,119 @@ function cardsForStreet(street: Street): number {
 export function gameReducer(state: GameState, action: GameAction): GameState {
   switch (action.type) {
     case 'SET_CONFIG': {
-      return {
-        ...state,
-        players: [
-          { ...state.players[0], chips: action.startingChips },
-          { ...state.players[1], chips: action.startingChips },
-        ] as [Player, Player],
-        smallBlind: action.smallBlind,
-        bigBlind: action.smallBlind * 2,
-      };
+      return createInitialState(action.config);
     }
 
     case 'RESET_GAME': {
-      return createInitialState(action.startingChips, action.smallBlind);
+      return createInitialState(action.config);
     }
 
     case 'START_NEW_HAND': {
-      const newDealerIndex = state.handNumber === 0 ? 0 : (1 - state.dealerIndex);
+      // Rotate dealer: for first hand use seat 0, else advance to next non-eliminated
+      const newDealerIndex = state.handNumber === 0
+        ? 0
+        : getNextNonEliminatedSeat(state.dealerIndex, state.players);
+
       const newDeck = shuffle(createDeck());
+
+      // Reset all non-eliminated players for new hand
+      const players = state.players.map(p => ({
+        ...p,
+        holeCards: [] as typeof p.holeCards,
+        currentBet: 0,
+        totalHandBet: 0,
+        hasFolded: p.isEliminated, // eliminated players are considered folded
+        hasActed: p.isEliminated,
+        isAllIn: false,
+        lastAction: null,
+      }));
 
       return {
         ...state,
-        players: [
-          {
-            ...state.players[0],
-            holeCards: [],
-            currentBet: 0,
-            hasFolded: false,
-            hasActed: false,
-            isAllIn: false,
-            lastAction: null,
-          },
-          {
-            ...state.players[1],
-            holeCards: [],
-            currentBet: 0,
-            hasFolded: false,
-            hasActed: false,
-            isAllIn: false,
-            lastAction: null,
-          },
-        ] as [Player, Player],
+        players,
         communityCards: [],
         deck: newDeck,
-        pot: 0,
+        pots: [],
         street: 'preflop',
         dealerIndex: newDealerIndex,
-        currentPlayerIndex: newDealerIndex, // dealer acts first preflop (is SB)
+        currentPlayerIndex: newDealerIndex,
         lastRaiseSize: state.bigBlind,
         minRaise: state.bigBlind,
         handNumber: state.handNumber + 1,
         isHandComplete: false,
-        winner: null,
-        winningHand: null,
-        losingHand: null,
+        winnerSeatIndices: null,
+        showdownResults: null,
         showdownRequired: false,
         messageLog: addLog(state, `--- Hand #${state.handNumber + 1} ---`),
       };
     }
 
     case 'POST_BLINDS': {
-      const sbIndex = state.dealerIndex; // dealer = SB in heads-up
-      const bbIndex = 1 - sbIndex;
-      const players = [...state.players] as [Player, Player];
+      const sbSeat = getSBSeat(state.dealerIndex, state.players);
+      const bbSeat = getBBSeat(state.dealerIndex, state.players);
+      const players = state.players.map(p => ({ ...p }));
 
-      const sbAmount = Math.min(state.smallBlind, players[sbIndex]!.chips);
-      const bbAmount = Math.min(state.bigBlind, players[bbIndex]!.chips);
+      const sbPlayer = players[sbSeat]!;
+      const bbPlayer = players[bbSeat]!;
 
-      players[sbIndex] = {
-        ...players[sbIndex]!,
-        chips: players[sbIndex]!.chips - sbAmount,
+      const sbAmount = Math.min(state.smallBlind, sbPlayer.chips);
+      const bbAmount = Math.min(state.bigBlind, bbPlayer.chips);
+
+      players[sbSeat] = {
+        ...sbPlayer,
+        chips: sbPlayer.chips - sbAmount,
         currentBet: sbAmount,
-        isAllIn: players[sbIndex]!.chips - sbAmount === 0,
+        totalHandBet: sbAmount,
+        isAllIn: sbPlayer.chips - sbAmount === 0,
       };
-      players[bbIndex] = {
-        ...players[bbIndex]!,
-        chips: players[bbIndex]!.chips - bbAmount,
+      players[bbSeat] = {
+        ...bbPlayer,
+        chips: bbPlayer.chips - bbAmount,
         currentBet: bbAmount,
-        isAllIn: players[bbIndex]!.chips - bbAmount === 0,
+        totalHandBet: bbAmount,
+        isAllIn: bbPlayer.chips - bbAmount === 0,
       };
+
+      const totalPosted = sbAmount + bbAmount;
+      const firstToAct = getFirstToActPreflop(state.dealerIndex, players);
 
       return {
         ...state,
         players,
-        pot: sbAmount + bbAmount,
-        currentPlayerIndex: sbIndex, // SB (dealer) acts first preflop
-        messageLog: addLog(state, `${players[sbIndex]!.name} posts SB $${sbAmount}, ${players[bbIndex]!.name} posts BB $${bbAmount}`),
+        pots: [{ amount: totalPosted, eligibleSeats: [] }],
+        currentPlayerIndex: firstToAct,
+        messageLog: addLog(state, `${players[sbSeat]!.name} posts SB $${sbAmount}, ${players[bbSeat]!.name} posts BB $${bbAmount}`),
       };
     }
 
     case 'DEAL_HOLE_CARDS': {
-      const { dealt, remaining } = deal(state.deck, 4);
-      const players = [...state.players] as [Player, Player];
-      // Deal alternating starting with SB (dealer)
-      const sbIndex = state.dealerIndex;
-      const bbIndex = 1 - sbIndex;
-      players[sbIndex] = { ...players[sbIndex]!, holeCards: [dealt[0]!, dealt[2]!] };
-      players[bbIndex] = { ...players[bbIndex]!, holeCards: [dealt[1]!, dealt[3]!] };
+      // Count active (non-eliminated) players
+      const activePlayers = state.players.filter(p => !p.isEliminated);
+      const totalCards = activePlayers.length * 2;
+      const { dealt, remaining } = deal(state.deck, totalCards);
+
+      // Deal clockwise from SB, alternating rounds
+      const sbSeat = getSBSeat(state.dealerIndex, state.players);
+      const dealOrder: number[] = [];
+      let seat = sbSeat;
+      for (let i = 0; i < activePlayers.length; i++) {
+        // Skip to next non-eliminated seat in first pass
+        if (i > 0) seat = getNextNonEliminatedSeat(seat, state.players);
+        dealOrder.push(seat);
+      }
+
+      const players = state.players.map(p => ({ ...p }));
+      // First card to each, then second card to each
+      for (let round = 0; round < 2; round++) {
+        for (let i = 0; i < dealOrder.length; i++) {
+          const cardIdx = round * dealOrder.length + i;
+          const playerSeat = dealOrder[i]!;
+          players[playerSeat] = {
+            ...players[playerSeat]!,
+            holeCards: [...players[playerSeat]!.holeCards, dealt[cardIdx]!],
+          };
+        }
+      }
 
       return {
         ...state,
@@ -179,14 +224,15 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     case 'PLAYER_ACTION': {
       const { action: playerAction } = action;
       const playerIdx = state.currentPlayerIndex;
-      const opponentIdx = 1 - playerIdx;
-      const players = [...state.players] as [Player, Player];
-      const player = { ...players[playerIdx]! };
-      const opponent = players[opponentIdx]!;
-      let pot = state.pot;
+      const players = state.players.map(p => ({ ...p }));
+      const player = players[playerIdx]!;
+      let pots = state.pots.map(p => ({ ...p, eligibleSeats: [...p.eligibleSeats] }));
       let lastRaiseSize = state.lastRaiseSize;
       let minRaise = state.minRaise;
       let log = state.messageLog;
+
+      // Max current bet among all non-eliminated players
+      const maxBet = Math.max(...players.filter(p => !p.isEliminated).map(p => p.currentBet));
 
       switch (playerAction.type) {
         case 'fold': {
@@ -203,47 +249,58 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           break;
         }
         case 'call': {
-          const callAmount = Math.min(opponent.currentBet - player.currentBet, player.chips);
+          const callAmount = Math.min(maxBet - player.currentBet, player.chips);
           player.chips -= callAmount;
           player.currentBet += callAmount;
+          player.totalHandBet += callAmount;
           player.hasActed = true;
           player.isAllIn = player.chips === 0;
-          player.lastAction = `Call $${callAmount}`;
-          pot += callAmount;
+          player.lastAction = player.isAllIn ? `Call All-In $${player.currentBet}` : `Call $${callAmount}`;
+          if (pots.length > 0) pots[0]!.amount += callAmount;
           log = addLog({ ...state, messageLog: log }, `${player.name} calls $${callAmount}`);
           break;
         }
         case 'raise': {
           const amount = playerAction.amount!;
           const totalBet = player.currentBet + amount;
-          const raiseBy = totalBet - opponent.currentBet;
+          const raiseBy = totalBet - maxBet;
           player.chips -= amount;
           player.currentBet = totalBet;
+          player.totalHandBet += amount;
           player.hasActed = true;
           player.isAllIn = player.chips === 0;
           player.lastAction = `Raise to $${totalBet}`;
-          pot += amount;
+          if (pots.length > 0) pots[0]!.amount += amount;
           lastRaiseSize = raiseBy;
           minRaise = raiseBy;
-          // Reset opponent's hasActed so they get to respond
-          players[opponentIdx] = { ...opponent, hasActed: false };
+          // Reset all other non-folded non-all-in non-eliminated players' hasActed
+          for (const p of players) {
+            if (p.seatIndex !== playerIdx && !p.hasFolded && !p.isAllIn && !p.isEliminated) {
+              p.hasActed = false;
+            }
+          }
           log = addLog({ ...state, messageLog: log }, `${player.name} raises to $${totalBet}`);
           break;
         }
         case 'allin': {
           const allInAmount = player.chips;
           const totalBet = player.currentBet + allInAmount;
-          const raiseBy = totalBet - opponent.currentBet;
+          const raiseBy = totalBet - maxBet;
           player.chips = 0;
           player.currentBet = totalBet;
+          player.totalHandBet += allInAmount;
           player.hasActed = true;
           player.isAllIn = true;
           player.lastAction = `All-In $${totalBet}`;
-          pot += allInAmount;
+          if (pots.length > 0) pots[0]!.amount += allInAmount;
           if (raiseBy > 0) {
             lastRaiseSize = Math.max(raiseBy, lastRaiseSize);
             minRaise = Math.max(raiseBy, minRaise);
-            players[opponentIdx] = { ...opponent, hasActed: false };
+            for (const p of players) {
+              if (p.seatIndex !== playerIdx && !p.hasFolded && !p.isAllIn && !p.isEliminated) {
+                p.hasActed = false;
+              }
+            }
           }
           log = addLog({ ...state, messageLog: log }, `${player.name} goes all-in for $${totalBet}`);
           break;
@@ -252,13 +309,16 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 
       players[playerIdx] = player;
 
+      // Find next player who can act
+      const nextToAct = getNextActiveSeat(playerIdx, players, true);
+
       return {
         ...state,
         players,
-        pot,
+        pots,
         lastRaiseSize,
         minRaise,
-        currentPlayerIndex: opponentIdx,
+        currentPlayerIndex: nextToAct,
         messageLog: log,
       };
     }
@@ -270,8 +330,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       const numCards = cardsForStreet(next);
       const { dealt, remaining } = deal(state.deck, numCards);
 
-      // Post-flop: BB (non-dealer) acts first (index = 1 - dealerIndex)
-      const firstToAct = 1 - state.dealerIndex;
+      const firstToAct = getFirstToActPostflop(state.dealerIndex, state.players);
 
       return {
         ...state,
@@ -281,77 +340,90 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         currentPlayerIndex: firstToAct,
         lastRaiseSize: state.bigBlind,
         minRaise: state.bigBlind,
-        players: [
-          { ...state.players[0], currentBet: 0, hasActed: false, lastAction: null },
-          { ...state.players[1], currentBet: 0, hasActed: false, lastAction: null },
-        ] as [Player, Player],
+        players: state.players.map(p => ({
+          ...p,
+          currentBet: 0,
+          hasActed: p.isEliminated || p.hasFolded || p.isAllIn,
+          lastAction: (p.isEliminated || p.hasFolded || p.isAllIn) ? p.lastAction : null,
+        })),
         messageLog: addLog(state, `--- ${next.charAt(0).toUpperCase() + next.slice(1)} ---`),
       };
     }
 
     case 'SHOWDOWN': {
-      const humanHand = evaluateBestHand(state.players[0].holeCards, state.communityCards);
-      const aiHand = evaluateBestHand(state.players[1].holeCards, state.communityCards);
-      const cmp = compareHands(humanHand, aiHand);
+      // Evaluate all non-folded, non-eliminated players' hands
+      const playerHands = new Map<number, ReturnType<typeof evaluateBestHand>>();
+      for (const p of state.players) {
+        if (!p.isEliminated && !p.hasFolded && p.holeCards.length > 0) {
+          playerHands.set(p.seatIndex, evaluateBestHand(p.holeCards, state.communityCards));
+        }
+      }
 
-      let winner: 'human' | 'ai' | 'tie';
-      let winningHand: typeof humanHand;
-      let losingHand: typeof aiHand;
+      // Calculate side pots
+      const sidePots = calculateSidePots(state.players);
 
-      if (cmp > 0) {
-        winner = 'human';
-        winningHand = humanHand;
-        losingHand = aiHand;
-      } else if (cmp < 0) {
-        winner = 'ai';
-        winningHand = aiHand;
-        losingHand = humanHand;
+      // Award pots
+      const awards = awardPots(sidePots, playerHands);
+
+      // Build showdown results
+      const showdownResults: ShowdownResult[] = [];
+      for (const [seatIndex, hand] of playerHands) {
+        const award = awards.find(a => a.seatIndex === seatIndex);
+        showdownResults.push({
+          seatIndex,
+          hand,
+          potWinnings: award?.amount ?? 0,
+        });
+      }
+
+      const winnerSeatIndices = awards.filter(a => a.amount > 0).map(a => a.seatIndex);
+
+      // Build winner message
+      let winMessage: string;
+      if (winnerSeatIndices.length === 1) {
+        const winner = state.players[winnerSeatIndices[0]!]!;
+        const hand = playerHands.get(winnerSeatIndices[0]!)!;
+        winMessage = `${winner.name} wins with ${hand.name}`;
+      } else if (winnerSeatIndices.length > 1) {
+        const names = winnerSeatIndices.map(s => state.players[s]!.name).join(' & ');
+        winMessage = `Split pot: ${names}`;
       } else {
-        winner = 'tie';
-        winningHand = humanHand;
-        losingHand = aiHand;
+        winMessage = 'No winner determined';
       }
 
       return {
         ...state,
         showdownRequired: true,
-        winner,
-        winningHand,
-        losingHand,
-        messageLog: addLog(state, winner === 'tie'
-          ? `Split pot! Both have ${winningHand.name}`
-          : `${winner === 'human' ? 'You' : 'Dealer'} wins with ${winningHand.name}`),
+        winnerSeatIndices,
+        showdownResults,
+        pots: sidePots,
+        messageLog: addLog(state, winMessage),
       };
     }
 
     case 'AWARD_POT': {
-      const players = [...state.players] as [Player, Player];
-      const pot = state.pot;
+      const players = state.players.map(p => ({ ...p }));
 
-      if (action.winner === 'tie') {
-        const half = Math.floor(pot / 2);
-        players[0] = { ...players[0], chips: players[0].chips + half };
-        players[1] = { ...players[1], chips: players[1].chips + (pot - half) };
-      } else {
-        const winnerIdx = action.winner === 'human' ? 0 : 1;
-        players[winnerIdx] = {
-          ...players[winnerIdx]!,
-          chips: players[winnerIdx]!.chips + pot,
+      for (const { seatIndex, amount } of action.winners) {
+        players[seatIndex] = {
+          ...players[seatIndex]!,
+          chips: players[seatIndex]!.chips + amount,
         };
       }
 
-      const isGameOver = players[0].chips === 0 || players[1].chips === 0;
+      // Build award message
+      const awardMessages = action.winners
+        .filter(w => w.amount > 0)
+        .map(w => `${players[w.seatIndex]!.name} wins $${w.amount}`);
 
       return {
         ...state,
         players,
-        pot: 0,
+        pots: [],
         isHandComplete: true,
         showdownRequired: false,
-        winner: null,
-        messageLog: addLog(state, action.winner === 'tie'
-          ? `Pot split: $${Math.floor(pot / 2)} each`
-          : `${action.winner === 'human' ? 'You' : 'Dealer'} wins $${pot}`),
+        winnerSeatIndices: null,
+        messageLog: addLog(state, awardMessages.join(', ')),
       };
     }
 
@@ -362,13 +434,42 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       };
     }
 
-    case 'REBUY_AI': {
-      const players = [...state.players] as [Player, Player];
-      players[1] = { ...players[1], chips: action.amount };
+    case 'REBUY_PLAYER': {
+      const players = state.players.map(p => ({ ...p }));
+      players[action.seatIndex] = {
+        ...players[action.seatIndex]!,
+        chips: action.amount,
+        isEliminated: false,
+      };
       return {
         ...state,
         players,
-        messageLog: addLog(state, `Dealer rebuys for $${action.amount}`),
+        messageLog: addLog(state, `${players[action.seatIndex]!.name} rebuys for $${action.amount}`),
+      };
+    }
+
+    case 'ELIMINATE_PLAYER': {
+      const players = state.players.map(p => ({ ...p }));
+      players[action.seatIndex] = {
+        ...players[action.seatIndex]!,
+        isEliminated: true,
+      };
+      return {
+        ...state,
+        players,
+        eliminationOrder: [...state.eliminationOrder, action.seatIndex],
+        messageLog: addLog(state, `${players[action.seatIndex]!.name} is eliminated!`),
+      };
+    }
+
+    case 'UPDATE_BLINDS': {
+      const currentLevel = state.currentBlindLevel !== undefined ? state.currentBlindLevel + 1 : 0;
+      return {
+        ...state,
+        smallBlind: action.small,
+        bigBlind: action.big,
+        currentBlindLevel: currentLevel,
+        messageLog: addLog(state, `Blinds increase to $${action.small}/$${action.big}`),
       };
     }
 

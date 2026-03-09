@@ -1,4 +1,4 @@
-import type { ActionType } from '../engine/types.js';
+import type { ActionType, AIPersonality } from '../engine/types.js';
 
 export interface StrategyAction {
   type: ActionType;
@@ -138,4 +138,48 @@ export function calculateBetSize(
   const targetFraction = sizeMin + Math.random() * (sizeMax - sizeMin);
   const target = Math.round(potSize * targetFraction);
   return Math.max(minBet, Math.min(maxBet, target));
+}
+
+/**
+ * Apply personality modifiers to a strategy bucket.
+ * Returns a new bucket with adjusted frequencies.
+ */
+export function applyPersonality(bucket: StrategyBucket, personality: AIPersonality): StrategyBucket {
+  const actions = bucket.actions.map(a => ({ ...a }));
+
+  for (const action of actions) {
+    switch (action.type) {
+      case 'fold':
+        // Tighter players fold less often when they play, but play fewer hands
+        // handled by strength shift
+        break;
+      case 'check':
+        // More aggressive = less checking
+        action.frequency = Math.max(0, action.frequency - personality.aggression * 0.3);
+        break;
+      case 'call':
+        // More aggressive = less calling, more raising
+        action.frequency = Math.max(0, action.frequency - personality.aggression * 0.2);
+        break;
+      case 'raise':
+        // More aggressive = more raising
+        action.frequency = Math.max(0, action.frequency + personality.aggression * 0.4);
+        // Bluff frequency: add bluff raises for weak hands
+        action.frequency = Math.max(0, action.frequency + personality.bluffFreq * 0.3);
+        break;
+      case 'allin':
+        action.frequency = Math.max(0, action.frequency + personality.aggression * 0.1);
+        break;
+    }
+  }
+
+  // Renormalize frequencies to sum to 1.0
+  const total = actions.reduce((sum, a) => sum + a.frequency, 0);
+  if (total > 0) {
+    for (const action of actions) {
+      action.frequency /= total;
+    }
+  }
+
+  return { ...bucket, actions };
 }

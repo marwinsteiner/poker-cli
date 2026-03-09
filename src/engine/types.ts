@@ -29,37 +29,82 @@ export interface EvaluatedHand {
 
 export type Street = 'preflop' | 'flop' | 'turn' | 'river';
 
-export interface Player {
-  id: 'human' | 'ai';
+export interface AIPersonality {
   name: string;
+  tightness: number;   // positive = tighter, negative = looser
+  aggression: number;   // positive = more aggressive, negative = more passive
+  bluffFreq: number;    // extra bluff frequency modifier
+}
+
+export interface Player {
+  seatIndex: number;
+  name: string;
+  isHuman: boolean;
+  isEliminated: boolean;
   chips: number;
   holeCards: Card[];
   currentBet: number;
+  totalHandBet: number;  // tracks total contributed this hand (for side pots)
   hasFolded: boolean;
   hasActed: boolean;
   isAllIn: boolean;
   lastAction: string | null;
+  personality?: AIPersonality;
+}
+
+export interface SidePot {
+  amount: number;
+  eligibleSeats: number[];
+}
+
+export interface BlindLevel {
+  small: number;
+  big: number;
+  durationSeconds: number;
+}
+
+export interface ShowdownResult {
+  seatIndex: number;
+  hand: EvaluatedHand;
+  potWinnings: number;
+}
+
+export type GameMode = 'headsup' | 'cash' | 'tournament';
+
+export interface GameConfig {
+  mode: GameMode;
+  playerCount: number;
+  startingChips: number;
+  smallBlind: number;
+  blindSchedule?: BlindLevel[];
+  actionTimerSeconds?: number;
 }
 
 export interface GameState {
-  players: [Player, Player]; // [human, ai]
+  players: Player[];
+  playerCount: number;
+  mode: GameMode;
   communityCards: Card[];
   deck: Card[];
-  pot: number;
+  pots: SidePot[];
   street: Street;
-  currentPlayerIndex: number; // 0 = human, 1 = ai
-  dealerIndex: number; // who is dealer/SB
+  currentPlayerIndex: number;
+  dealerIndex: number;
   smallBlind: number;
   bigBlind: number;
   lastRaiseSize: number;
   minRaise: number;
   handNumber: number;
   isHandComplete: boolean;
-  winner: 'human' | 'ai' | 'tie' | null;
-  winningHand: EvaluatedHand | null;
-  losingHand: EvaluatedHand | null;
+  winnerSeatIndices: number[] | null;
+  showdownResults: ShowdownResult[] | null;
   showdownRequired: boolean;
   messageLog: string[];
+  // Tournament-specific:
+  eliminationOrder: number[];
+  blindSchedule?: BlindLevel[];
+  currentBlindLevel?: number;
+  actionTimerSeconds?: number;
 }
 
 export type ActionType = 'fold' | 'check' | 'call' | 'raise' | 'allin';
@@ -84,11 +129,13 @@ export type GameAction =
   | { type: 'PLAYER_ACTION'; action: PlayerAction }
   | { type: 'ADVANCE_STREET' }
   | { type: 'SHOWDOWN' }
-  | { type: 'AWARD_POT'; winner: 'human' | 'ai' | 'tie' }
+  | { type: 'AWARD_POT'; winners: { seatIndex: number; amount: number }[] }
   | { type: 'LOG_MESSAGE'; message: string }
-  | { type: 'SET_CONFIG'; startingChips: number; smallBlind: number }
-  | { type: 'RESET_GAME'; startingChips: number; smallBlind: number }
-  | { type: 'REBUY_AI'; amount: number };
+  | { type: 'SET_CONFIG'; config: GameConfig }
+  | { type: 'RESET_GAME'; config: GameConfig }
+  | { type: 'REBUY_PLAYER'; seatIndex: number; amount: number }
+  | { type: 'ELIMINATE_PLAYER'; seatIndex: number }
+  | { type: 'UPDATE_BLINDS'; small: number; big: number };
 
 export type AnimationPhase =
   | 'idle'

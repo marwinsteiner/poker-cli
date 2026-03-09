@@ -6,7 +6,7 @@ interface MessageLogProps {
 }
 
 export function MessageLog({ messages }: MessageLogProps) {
-  const display = messages.slice(-5);
+  const display = messages.slice(-8);
 
   return (
     <Box flexDirection="column" paddingX={1}>

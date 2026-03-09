@@ -4,6 +4,7 @@ import chalk from 'chalk';
 import type { GameState, PlayerAction, AvailableAction, AnimationPhase } from '../engine/types.js';
 import { getAvailableActions, isRoundComplete } from '../engine/betting.js';
 import { getAIAction } from '../ai/ai-player.js';
+import { getTotalPot } from '../engine/side-pots.js';
 import { PlayerArea } from './PlayerArea.js';
 import { CommunityCards } from './CommunityCards.js';
 import { PotDisplay } from './PotDisplay.js';
@@ -27,15 +28,9 @@ export function GameTable({ state, dispatch, onGameOver, startingChips }: GameTa
   const [animPhase, setAnimPhase] = useState<AnimationPhase>('idle');
   const [revealCount, setRevealCount] = useState(0);
   const [showAICards, setShowAICards] = useState(false);
-  const [displayPot, setDisplayPot] = useState(state.pot);
   const processingRef = useRef(false);
   const handStartedRef = useRef(false);
   const gameOverRef = useRef(false);
-
-  // Sync display pot
-  useEffect(() => {
-    setDisplayPot(state.pot);
-  }, [state.pot]);
 
   // Start new hand
   useEffect(() => {
@@ -51,8 +46,12 @@ export function GameTable({ state, dispatch, onGameOver, startingChips }: GameTa
   useEffect(() => {
     if (processingRef.current) return;
 
+    const humanPlayer = state.players[0]!;
+    const aiPlayer = state.players[1]!;
+
     // After START_NEW_HAND, post blinds
-    if (state.handNumber > 0 && state.players[0].holeCards.length === 0 && state.pot === 0 && !state.isHandComplete) {
+    if (state.handNumber > 0 && humanPlayer.holeCards.length === 0 &&
+        state.pots.length === 0 && !state.isHandComplete) {
       processingRef.current = true;
       setTimeout(() => {
         dispatch({ type: 'POST_BLINDS' });
@@ -62,7 +61,7 @@ export function GameTable({ state, dispatch, onGameOver, startingChips }: GameTa
     }
 
     // After POST_BLINDS, deal hole cards
-    if (state.pot > 0 && state.players[0].holeCards.length === 0 && !state.isHandComplete) {
+    if (state.pots.length > 0 && humanPlayer.holeCards.length === 0 && !state.isHandComplete) {
       processingRef.current = true;
       setAnimPhase('dealing');
       setTimeout(() => {
@@ -74,21 +73,23 @@ export function GameTable({ state, dispatch, onGameOver, startingChips }: GameTa
     }
 
     // Check if round is complete
-    if (state.players[0].holeCards.length > 0 && !state.isHandComplete && !state.showdownRequired) {
+    if (humanPlayer.holeCards.length > 0 && !state.isHandComplete && !state.showdownRequired) {
       if (isRoundComplete(state)) {
         // Someone folded?
-        if (state.players[0].hasFolded) {
+        if (humanPlayer.hasFolded) {
           processingRef.current = true;
+          const totalPot = getTotalPot(state.pots);
           setTimeout(() => {
-            dispatch({ type: 'AWARD_POT', winner: 'ai' });
+            dispatch({ type: 'AWARD_POT', winners: [{ seatIndex: 1, amount: totalPot }] });
             processingRef.current = false;
           }, 500);
           return;
         }
-        if (state.players[1].hasFolded) {
+        if (aiPlayer.hasFolded) {
           processingRef.current = true;
+          const totalPot = getTotalPot(state.pots);
           setTimeout(() => {
-            dispatch({ type: 'AWARD_POT', winner: 'human' });
+            dispatch({ type: 'AWARD_POT', winners: [{ seatIndex: 0, amount: totalPot }] });
             processingRef.current = false;
           }, 500);
           return;
@@ -101,6 +102,16 @@ export function GameTable({ state, dispatch, onGameOver, startingChips }: GameTa
             dispatch({ type: 'SHOWDOWN' });
             processingRef.current = false;
           }, 500);
+          return;
+        }
+
+        // Both all-in → run out board
+        if (humanPlayer.isAllIn && aiPlayer.isAllIn) {
+          processingRef.current = true;
+          setTimeout(() => {
+            dispatch({ type: 'ADVANCE_STREET' });
+            processingRef.current = false;
+          }, 800);
           return;
         }
 
@@ -118,12 +129,12 @@ export function GameTable({ state, dispatch, onGameOver, startingChips }: GameTa
       }
 
       // AI's turn
-      if (state.currentPlayerIndex === 1 && !state.players[1].hasFolded && !state.players[1].isAllIn) {
+      if (state.currentPlayerIndex === 1 && !aiPlayer.hasFolded && !aiPlayer.isAllIn) {
         setInputMode('waiting');
         processingRef.current = true;
         const delay = 800 + Math.random() * 1200;
         setTimeout(() => {
-          const aiAction = getAIAction(state);
+          const aiAction = getAIAction(state, 1, aiPlayer.personality);
           dispatch({ type: 'PLAYER_ACTION', action: aiAction });
           processingRef.current = false;
         }, delay);
@@ -131,21 +142,24 @@ export function GameTable({ state, dispatch, onGameOver, startingChips }: GameTa
       }
 
       // Human's turn
-      if (state.currentPlayerIndex === 0 && !state.players[0].hasFolded && !state.players[0].isAllIn) {
+      if (state.currentPlayerIndex === 0 && !humanPlayer.hasFolded && !humanPlayer.isAllIn) {
         setInputMode('action');
         return;
       }
     }
 
     // Showdown → award pot
-    if (state.showdownRequired && state.winner && !state.isHandComplete) {
+    if (state.showdownRequired && state.showdownResults && !state.isHandComplete) {
       processingRef.current = true;
       setShowAICards(true);
       setAnimPhase('showdown');
       setTimeout(() => {
         setAnimPhase('awarding');
         setTimeout(() => {
-          dispatch({ type: 'AWARD_POT', winner: state.winner! });
+          const winners = state.showdownResults!
+            .filter(r => r.potWinnings > 0)
+            .map(r => ({ seatIndex: r.seatIndex, amount: r.potWinnings }));
+          dispatch({ type: 'AWARD_POT', winners });
           setAnimPhase('idle');
           processingRef.current = false;
         }, 1000);
@@ -156,7 +170,7 @@ export function GameTable({ state, dispatch, onGameOver, startingChips }: GameTa
     // Hand complete → check game over, AI rebuy, or start next
     if (state.isHandComplete) {
       // Human busted → game over
-      if (state.players[0].chips === 0 && !gameOverRef.current) {
+      if (humanPlayer.chips === 0 && !gameOverRef.current) {
         gameOverRef.current = true;
         setTimeout(() => onGameOver(), 2000);
         return;
@@ -165,8 +179,8 @@ export function GameTable({ state, dispatch, onGameOver, startingChips }: GameTa
       processingRef.current = true;
       setTimeout(() => {
         // AI busted → auto-rebuy
-        if (state.players[1].chips === 0) {
-          dispatch({ type: 'REBUY_AI', amount: startingChips });
+        if (aiPlayer.chips === 0) {
+          dispatch({ type: 'REBUY_PLAYER', seatIndex: 1, amount: startingChips });
         }
         setShowAICards(false);
         setRevealCount(0);
@@ -180,7 +194,6 @@ export function GameTable({ state, dispatch, onGameOver, startingChips }: GameTa
   // Update reveal count based on community cards
   useEffect(() => {
     if (state.communityCards.length > revealCount) {
-      // Animate cards appearing one by one
       let i = revealCount;
       const timer = setInterval(() => {
         i++;
@@ -220,8 +233,16 @@ export function GameTable({ state, dispatch, onGameOver, startingChips }: GameTa
     }
   });
 
+  const humanPlayer = state.players[0]!;
+  const aiPlayer = state.players[1]!;
   const availableActions = state.currentPlayerIndex === 0 ? getAvailableActions(state) : [];
   const isHumanTurn = inputMode === 'action';
+  const totalPot = getTotalPot(state.pots);
+  const isWinnerHuman = state.winnerSeatIndices?.includes(0) ?? false;
+  const isWinnerAI = state.winnerSeatIndices?.includes(1) ?? false;
+
+  // Find winning hand for display
+  const winningResult = state.showdownResults?.find(r => r.potWinnings > 0);
 
   return (
     <Box
@@ -234,10 +255,10 @@ export function GameTable({ state, dispatch, onGameOver, startingChips }: GameTa
     >
       {/* AI Area */}
       <PlayerArea
-        player={state.players[1]}
+        player={aiPlayer}
         isDealer={state.dealerIndex === 1}
         showCards={showAICards}
-        isWinner={state.winner === 'ai'}
+        isWinner={isWinnerAI}
       />
 
       <Box height={1} />
@@ -247,22 +268,22 @@ export function GameTable({ state, dispatch, onGameOver, startingChips }: GameTa
 
       {/* Pot */}
       <Box height={1} />
-      <PotDisplay amount={displayPot} />
+      <PotDisplay pots={state.pots} />
       <Box height={1} />
 
       {/* Winning hand name */}
-      {state.winningHand && state.showdownRequired && (
+      {winningResult && state.showdownRequired && (
         <Box justifyContent="center">
-          <Text bold color="green">{state.winningHand.name}</Text>
+          <Text bold color="green">{winningResult.hand.name}</Text>
         </Box>
       )}
 
       {/* Human Area */}
       <PlayerArea
-        player={state.players[0]}
+        player={humanPlayer}
         isDealer={state.dealerIndex === 0}
         showCards={true}
-        isWinner={state.winner === 'human'}
+        isWinner={isWinnerHuman}
       />
 
       <Box height={1} />
@@ -289,7 +310,7 @@ export function GameTable({ state, dispatch, onGameOver, startingChips }: GameTa
         <BetSlider
           minBet={raiseAction.minRaise!}
           maxBet={raiseAction.maxRaise!}
-          pot={state.pot}
+          pot={totalPot}
           bigBlind={state.bigBlind}
           isActive={true}
           onConfirm={handleBetConfirm}
@@ -299,15 +320,15 @@ export function GameTable({ state, dispatch, onGameOver, startingChips }: GameTa
 
       {inputMode === 'waiting' && (
         <Box justifyContent="center">
-          <Text dimColor>{state.currentPlayerIndex === 1 ? 'Dealer is thinking...' : 'Waiting...'}</Text>
+          <Text dimColor>{state.currentPlayerIndex === 1 ? `${aiPlayer.name} is thinking...` : 'Waiting...'}</Text>
         </Box>
       )}
 
       {/* Keyboard hints */}
       <Box justifyContent="center" marginTop={1}>
         <Text dimColor>
-          {inputMode === 'action' && '[←/→ Select]  [Enter Confirm]  [Q Quit]'}
-          {inputMode === 'bet' && '[↑/↓ Amount]  [1-4 Presets]  [Enter Confirm]  [Esc Back]'}
+          {inputMode === 'action' && '[Left/Right Select]  [Enter Confirm]  [Q Quit]'}
+          {inputMode === 'bet' && '[Up/Down Amount]  [1-4 Presets]  [Enter Confirm]  [Esc Back]'}
           {inputMode === 'waiting' && '[Q Quit]'}
         </Text>
       </Box>

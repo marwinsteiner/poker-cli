@@ -14,7 +14,8 @@ export function GameOverScreen({ state, onPlayAgain }: GameOverScreenProps) {
   const [selectedOption, setSelectedOption] = useState(0);
   const [banner, setBanner] = useState('');
 
-  const humanWon = state.players[0].chips > 0;
+  const humanPlayer = state.players[0]!;
+  const humanWon = humanPlayer.chips > 0;
 
   useEffect(() => {
     try {
@@ -42,6 +43,9 @@ export function GameOverScreen({ state, onPlayAgain }: GameOverScreenProps) {
     }
   });
 
+  // Sort players by chips for multi-player display
+  const sortedPlayers = [...state.players].sort((a, b) => b.chips - a.chips);
+
   return (
     <Box flexDirection="column" alignItems="center" paddingY={1}>
       <Text color={humanWon ? 'green' : 'red'}>{banner}</Text>
@@ -50,11 +54,24 @@ export function GameOverScreen({ state, onPlayAgain }: GameOverScreenProps) {
 
       <Box flexDirection="column" alignItems="center">
         <Text>Hands played: {chalk.yellow(String(state.handNumber))}</Text>
-        <Text>
-          Final chips: {chalk.green(`You $${state.players[0].chips}`)}
-          {'  '}
-          {chalk.red(`Dealer $${state.players[1].chips}`)}
-        </Text>
+        <Box height={1} />
+        {state.playerCount <= 2 ? (
+          <Text>
+            Final chips: {chalk.green(`You $${state.players[0]!.chips}`)}
+            {'  '}
+            {chalk.red(`${state.players[1]!.name} $${state.players[1]!.chips}`)}
+          </Text>
+        ) : (
+          <Box flexDirection="column" alignItems="center">
+            <Text bold>Final Standings:</Text>
+            {sortedPlayers.map((p, i) => (
+              <Text key={p.seatIndex}>
+                {p.isHuman ? chalk.green(`${i + 1}. ${p.name} $${p.chips}`) :
+                             chalk.white(`${i + 1}. ${p.name} $${p.chips}`)}
+              </Text>
+            ))}
+          </Box>
+        )}
       </Box>
 
       <Box height={1} />
@@ -77,7 +94,7 @@ export function GameOverScreen({ state, onPlayAgain }: GameOverScreenProps) {
       </Box>
 
       <Box height={1} />
-      <Text dimColor>[←/→ Select]  [Enter Confirm]  [Q Quit]</Text>
+      <Text dimColor>[Left/Right Select]  [Enter Confirm]  [Q Quit]</Text>
     </Box>
   );
 }

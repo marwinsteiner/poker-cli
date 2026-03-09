@@ -9,16 +9,19 @@ interface PlayerAreaProps {
   isDealer: boolean;
   showCards: boolean;
   isWinner?: boolean;
+  positionBadge?: string;
 }
 
-export function PlayerArea({ player, isDealer, showCards, isWinner }: PlayerAreaProps) {
-  const dealerBadge = isDealer ? chalk.cyan(' [D]') : '';
-  const nameColor = isWinner ? chalk.green.bold : player.id === 'human' ? chalk.white.bold : chalk.gray;
+export function PlayerArea({ player, isDealer, showCards, isWinner, positionBadge }: PlayerAreaProps) {
+  const badge = positionBadge
+    ? chalk.cyan(` [${positionBadge}]`)
+    : isDealer ? chalk.cyan(' [D]') : '';
+  const nameColor = isWinner ? chalk.green.bold : player.isHuman ? chalk.white.bold : chalk.gray;
   const chipColor = player.chips > 0 ? chalk.yellow : chalk.red;
 
   return (
     <Box flexDirection="column" alignItems="center" gap={0}>
-      <Text>{nameColor(player.name)}{dealerBadge}</Text>
+      <Text>{nameColor(player.name)}{badge}</Text>
       <Text>{chipColor(`Chips: $${player.chips}`)}</Text>
       {player.holeCards.length > 0 && (
         <Box marginTop={0}>

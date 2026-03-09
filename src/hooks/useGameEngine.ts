@@ -1,17 +1,16 @@
 import { useReducer, useCallback } from 'react';
-import type { GameState, GameAction } from '../engine/types.js';
+import type { GameState, GameAction, GameConfig } from '../engine/types.js';
 import { gameReducer, createInitialState } from '../engine/game-state.js';
 
-export function useGameEngine(startingChips: number, smallBlind: number) {
-  const [state, dispatch] = useReducer(gameReducer, createInitialState(startingChips, smallBlind));
+export function useGameEngine(config: GameConfig) {
+  const [state, dispatch] = useReducer(gameReducer, createInitialState(config));
 
-  const resetGame = useCallback((newChips?: number, newBlind?: number) => {
+  const resetGame = useCallback((newConfig?: GameConfig) => {
     dispatch({
       type: 'RESET_GAME',
-      startingChips: newChips ?? startingChips,
-      smallBlind: newBlind ?? smallBlind,
+      config: newConfig ?? config,
     });
-  }, [startingChips, smallBlind]);
+  }, [config]);
 
   return { state, dispatch, resetGame };
 }

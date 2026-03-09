@@ -2,12 +2,13 @@ import type { GameState, AvailableAction } from './types.js';
 
 export function getAvailableActions(state: GameState): AvailableAction[] {
   const player = state.players[state.currentPlayerIndex]!;
-  const opponent = state.players[1 - state.currentPlayerIndex]!;
+  if (player.hasFolded || player.isAllIn || player.isEliminated) return [];
+
   const actions: AvailableAction[] = [];
 
-  if (player.hasFolded || player.isAllIn) return [];
-
-  const toCall = opponent.currentBet - player.currentBet;
+  // Max current bet among all non-eliminated players
+  const maxBet = Math.max(...state.players.filter(p => !p.isEliminated).map(p => p.currentBet));
+  const toCall = maxBet - player.currentBet;
 
   // Fold is always available if there's something to call
   if (toCall > 0) {
@@ -39,7 +40,7 @@ export function getAvailableActions(state: GameState): AvailableAction[] {
   const chipsAfterCall = player.chips - toCall;
   if (chipsAfterCall <= 0) return actions;
 
-  const minRaiseTotal = opponent.currentBet + Math.max(state.minRaise, state.bigBlind);
+  const minRaiseTotal = maxBet + Math.max(state.minRaise, state.bigBlind);
   const raiseMin = Math.min(minRaiseTotal - player.currentBet, player.chips);
   const raiseMax = player.chips;
 
@@ -74,20 +75,17 @@ export function getAvailableActions(state: GameState): AvailableAction[] {
 }
 
 export function isRoundComplete(state: GameState): boolean {
-  const [p1, p2] = state.players;
+  const activePlayers = state.players.filter(p => !p.isEliminated && !p.hasFolded);
 
-  // If someone folded, hand is complete
-  if (p1.hasFolded || p2.hasFolded) return true;
+  // If <=1 non-folded player, hand is over
+  if (activePlayers.length <= 1) return true;
 
-  // If both all-in, round is complete
-  if (p1.isAllIn && p2.isAllIn) return true;
+  // All non-folded, non-all-in players must have acted with equal bets
+  const canAct = activePlayers.filter(p => !p.isAllIn);
 
-  // If one is all-in and other has matched, round complete
-  if (p1.isAllIn && p2.hasActed && p2.currentBet >= p1.currentBet) return true;
-  if (p2.isAllIn && p1.hasActed && p1.currentBet >= p2.currentBet) return true;
+  if (canAct.length === 0) return true; // all remaining are all-in
 
-  // Both must have acted and bets must be equal
-  if (p1.hasActed && p2.hasActed && p1.currentBet === p2.currentBet) return true;
+  const maxBet = Math.max(...activePlayers.map(p => p.currentBet));
 
-  return false;
+  return canAct.every(p => p.hasActed && p.currentBet === maxBet);
 }

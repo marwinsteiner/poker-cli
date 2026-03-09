@@ -2,18 +2,39 @@ import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
 import chalk from 'chalk';
 import figlet from 'figlet';
+import type { GameConfig, GameMode, BlindLevel } from '../engine/types.js';
+import { getBlindSchedule, type BlindSpeed } from '../engine/blind-schedule.js';
 
 interface TitleScreenProps {
-  onStart: (startingChips: number, smallBlind: number) => void;
+  onStart: (config: GameConfig) => void;
 }
+
+type Step = 'mode' | 'config';
+
+const MODE_OPTIONS: { mode: GameMode; label: string; desc: string }[] = [
+  { mode: 'headsup', label: 'Heads-Up (1v1)', desc: 'Classic 1-on-1 poker' },
+  { mode: 'cash', label: 'Cash Game', desc: '6 or 8-handed with AI opponents' },
+  { mode: 'tournament', label: 'Tournament', desc: 'Increasing blinds, last one standing wins' },
+];
 
 export function TitleScreen({ onStart }: TitleScreenProps) {
   const { exit } = useApp();
   const [title, setTitle] = useState('');
-  const [selectedOption, setSelectedOption] = useState(0); // 0=Start, 1=Quit
+  const [step, setStep] = useState<Step>('mode');
+
+  // Mode selection
+  const [modeIndex, setModeIndex] = useState(0);
+
+  // Config fields
   const [chips, setChips] = useState(1500);
   const [blind, setBlind] = useState(10);
-  const [configField, setConfigField] = useState(0); // 0=chips, 1=blind, 2=buttons
+  const [playerCount, setPlayerCount] = useState(6);
+  const [blindSpeed, setBlindSpeed] = useState<BlindSpeed>('normal');
+  const [actionTimer, setActionTimer] = useState(30);
+  const [configField, setConfigField] = useState(0);
+  const [buttonIndex, setButtonIndex] = useState(0);
+
+  const selectedMode = MODE_OPTIONS[modeIndex]!.mode;
 
   useEffect(() => {
     try {
@@ -24,76 +45,196 @@ export function TitleScreen({ onStart }: TitleScreenProps) {
     }
   }, []);
 
+  // Number of config fields depends on mode
+  const getConfigFields = () => {
+    switch (selectedMode) {
+      case 'headsup':
+        return ['chips', 'blind', 'buttons'] as const;
+      case 'cash':
+        return ['chips', 'blind', 'playerCount', 'buttons'] as const;
+      case 'tournament':
+        return ['chips', 'playerCount', 'blindSpeed', 'actionTimer', 'buttons'] as const;
+    }
+  };
+
+  const configFields = getConfigFields();
+  const maxField = configFields.length - 1;
+  const currentFieldName = configFields[Math.min(configField, maxField)];
+
   useInput((input, key) => {
+    if (input === 'q') {
+      exit();
+      return;
+    }
+
+    if (step === 'mode') {
+      if (key.upArrow) {
+        setModeIndex(prev => Math.max(0, prev - 1));
+      } else if (key.downArrow) {
+        setModeIndex(prev => Math.min(MODE_OPTIONS.length - 1, prev + 1));
+      } else if (key.return) {
+        setStep('config');
+        setConfigField(0);
+      }
+      return;
+    }
+
+    // Config step
     if (key.upArrow) {
       setConfigField(prev => Math.max(0, prev - 1));
     } else if (key.downArrow) {
-      setConfigField(prev => Math.min(2, prev + 1));
+      setConfigField(prev => Math.min(maxField, prev + 1));
     } else if (key.leftArrow) {
-      if (configField === 0) setChips(prev => Math.max(100, prev - 100));
-      else if (configField === 1) setBlind(prev => Math.max(5, prev - 5));
-      else setSelectedOption(prev => Math.max(0, prev - 1));
+      if (currentFieldName === 'chips') setChips(prev => Math.max(100, prev - 100));
+      else if (currentFieldName === 'blind') setBlind(prev => Math.max(5, prev - 5));
+      else if (currentFieldName === 'playerCount') setPlayerCount(prev => prev === 8 ? 6 : 6);
+      else if (currentFieldName === 'blindSpeed') {
+        setBlindSpeed(prev => prev === 'normal' ? 'turbo' : prev === 'deep' ? 'normal' : 'turbo');
+      }
+      else if (currentFieldName === 'actionTimer') setActionTimer(prev => prev === 30 ? 15 : prev === 60 ? 30 : 15);
+      else if (currentFieldName === 'buttons') setButtonIndex(prev => Math.max(0, prev - 1));
     } else if (key.rightArrow) {
-      if (configField === 0) setChips(prev => Math.min(10000, prev + 100));
-      else if (configField === 1) setBlind(prev => Math.min(100, prev + 5));
-      else setSelectedOption(prev => Math.min(1, prev + 1));
+      if (currentFieldName === 'chips') setChips(prev => Math.min(10000, prev + 100));
+      else if (currentFieldName === 'blind') setBlind(prev => Math.min(100, prev + 5));
+      else if (currentFieldName === 'playerCount') setPlayerCount(prev => prev === 6 ? 8 : 8);
+      else if (currentFieldName === 'blindSpeed') {
+        setBlindSpeed(prev => prev === 'turbo' ? 'normal' : prev === 'normal' ? 'deep' : 'deep');
+      }
+      else if (currentFieldName === 'actionTimer') setActionTimer(prev => prev === 15 ? 30 : prev === 30 ? 60 : 60);
+      else if (currentFieldName === 'buttons') setButtonIndex(prev => Math.min(1, prev + 1));
     } else if (key.return) {
-      if (configField === 2) {
-        if (selectedOption === 0) {
-          onStart(chips, blind);
+      if (currentFieldName === 'buttons') {
+        if (buttonIndex === 0) {
+          // Start
+          const config: GameConfig = {
+            mode: selectedMode,
+            playerCount: selectedMode === 'headsup' ? 2 : playerCount,
+            startingChips: chips,
+            smallBlind: selectedMode === 'tournament' ? getBlindSchedule(blindSpeed)[0]!.small : blind,
+          };
+          if (selectedMode === 'tournament') {
+            config.blindSchedule = getBlindSchedule(blindSpeed);
+            config.actionTimerSeconds = actionTimer;
+          }
+          onStart(config);
         } else {
-          exit();
+          setStep('mode');
         }
       } else {
-        setConfigField(prev => prev + 1);
+        setConfigField(prev => Math.min(maxField, prev + 1));
       }
-    } else if (input === 'q') {
-      exit();
+    } else if (key.escape) {
+      if (step === 'config') {
+        setStep('mode');
+      }
     }
   });
 
   return (
     <Box flexDirection="column" alignItems="center" paddingY={1}>
       <Text color="red">{title}</Text>
-      <Text bold>Heads-Up No-Limit Texas Hold'em</Text>
+      <Text bold>Texas Hold'em Poker</Text>
       <Box height={1} />
 
-      <Box flexDirection="column" gap={0} paddingX={2}>
-        <Text>
-          {configField === 0 ? chalk.green.bold('> ') : '  '}
-          Starting Chips: {chalk.yellow(`$${chips}`)}
-          {configField === 0 ? chalk.dim(' [←/→ adjust]') : ''}
-        </Text>
-        <Text>
-          {configField === 1 ? chalk.green.bold('> ') : '  '}
-          Small Blind:    {chalk.yellow(`$${blind}`)}
-          {configField === 1 ? chalk.dim(' [←/→ adjust]') : ''}
-        </Text>
-      </Box>
+      {step === 'mode' && (
+        <>
+          <Text bold>Select Mode:</Text>
+          <Box height={1} />
+          <Box flexDirection="column" paddingX={2}>
+            {MODE_OPTIONS.map((opt, i) => {
+              const isSelected = i === modeIndex;
+              return (
+                <Box key={opt.mode}>
+                  <Text>
+                    {isSelected ? chalk.green.bold('> ') : '  '}
+                    {isSelected ? chalk.green.bold(opt.label) : opt.label}
+                    {isSelected ? chalk.dim(` - ${opt.desc}`) : ''}
+                  </Text>
+                </Box>
+              );
+            })}
+          </Box>
+          <Box height={1} />
+          <Text dimColor>[Up/Down Select]  [Enter Confirm]  [Q Quit]</Text>
+        </>
+      )}
 
-      <Box height={1} />
+      {step === 'config' && (
+        <>
+          <Text bold>{MODE_OPTIONS[modeIndex]!.label} Settings:</Text>
+          <Box height={1} />
+          <Box flexDirection="column" paddingX={2}>
+            {configFields.map((field, i) => {
+              const isActive = configField === i;
+              const prefix = isActive ? chalk.green.bold('> ') : '  ';
+              const hint = isActive ? chalk.dim(' [Left/Right adjust]') : '';
 
-      <Box gap={4}>
-        <Text
-          bold={configField === 2 && selectedOption === 0}
-          inverse={configField === 2 && selectedOption === 0}
-          color={configField === 2 && selectedOption === 0 ? 'green' : undefined}
-          dimColor={configField !== 2}
-        >
-          {' Start '}
-        </Text>
-        <Text
-          bold={configField === 2 && selectedOption === 1}
-          inverse={configField === 2 && selectedOption === 1}
-          color={configField === 2 && selectedOption === 1 ? 'red' : undefined}
-          dimColor={configField !== 2}
-        >
-          {' Quit '}
-        </Text>
-      </Box>
-
-      <Box height={1} />
-      <Text dimColor>[↑/↓ Navigate]  [←/→ Adjust]  [Enter Select]  [Q Quit]</Text>
+              if (field === 'chips') {
+                return (
+                  <Text key={field}>
+                    {prefix}Starting Chips: {chalk.yellow(`$${chips}`)}{hint}
+                  </Text>
+                );
+              }
+              if (field === 'blind') {
+                return (
+                  <Text key={field}>
+                    {prefix}Small Blind: {chalk.yellow(`$${blind}`)}{hint}
+                  </Text>
+                );
+              }
+              if (field === 'playerCount') {
+                return (
+                  <Text key={field}>
+                    {prefix}Players: {chalk.yellow(`${playerCount}`)}{hint}
+                  </Text>
+                );
+              }
+              if (field === 'blindSpeed') {
+                const speedLabel = blindSpeed === 'turbo' ? 'Turbo (3min)' :
+                                   blindSpeed === 'normal' ? 'Normal (5min)' : 'Deep (10min)';
+                return (
+                  <Text key={field}>
+                    {prefix}Blind Speed: {chalk.yellow(speedLabel)}{hint}
+                  </Text>
+                );
+              }
+              if (field === 'actionTimer') {
+                return (
+                  <Text key={field}>
+                    {prefix}Action Timer: {chalk.yellow(`${actionTimer}s`)}{hint}
+                  </Text>
+                );
+              }
+              if (field === 'buttons') {
+                return (
+                  <Box key={field} gap={4} marginTop={1}>
+                    <Text
+                      bold={isActive && buttonIndex === 0}
+                      inverse={isActive && buttonIndex === 0}
+                      color={isActive && buttonIndex === 0 ? 'green' : undefined}
+                      dimColor={!isActive}
+                    >
+                      {' Start '}
+                    </Text>
+                    <Text
+                      bold={isActive && buttonIndex === 1}
+                      inverse={isActive && buttonIndex === 1}
+                      color={isActive && buttonIndex === 1 ? 'red' : undefined}
+                      dimColor={!isActive}
+                    >
+                      {' Back '}
+                    </Text>
+                  </Box>
+                );
+              }
+              return null;
+            })}
+          </Box>
+          <Box height={1} />
+          <Text dimColor>[Up/Down Navigate]  [Left/Right Adjust]  [Enter Select]  [Esc Back]</Text>
+        </>
+      )}
     </Box>
   );
 }

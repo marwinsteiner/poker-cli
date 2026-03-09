@@ -1,11 +1,12 @@
-import type { GameState, PlayerAction } from '../engine/types.js';
+import type { GameState, PlayerAction, AIPersonality } from '../engine/types.js';
 import { getAvailableActions } from '../engine/betting.js';
 import { evaluatePreflopStrength, evaluatePostflopStrength } from './hand-strength.js';
-import { getBucket, pickAction, calculateBetSize } from './strategy.js';
+import { getBucket, pickAction, calculateBetSize, applyPersonality } from './strategy.js';
+import { getTotalPot } from '../engine/side-pots.js';
 
-export function getAIAction(state: GameState): PlayerAction {
-  const aiPlayer = state.players[1]!;
-  const humanPlayer = state.players[0]!;
+export function getAIAction(state: GameState, seatIndex?: number, personality?: AIPersonality): PlayerAction {
+  const aiSeat = seatIndex ?? state.currentPlayerIndex;
+  const aiPlayer = state.players[aiSeat]!;
   const available = getAvailableActions(state);
 
   if (available.length === 0) {
@@ -20,17 +21,26 @@ export function getAIAction(state: GameState): PlayerAction {
     strength = evaluatePostflopStrength(aiPlayer.holeCards, state.communityCards);
   }
 
-  // Determine if facing a bet
-  const facingBet = humanPlayer.currentBet > aiPlayer.currentBet;
+  // Apply personality tightness modifier (shifts perceived strength)
+  const effectivePersonality = personality ?? aiPlayer.personality;
+  if (effectivePersonality) {
+    strength = Math.max(0, Math.min(1, strength - effectivePersonality.tightness));
+  }
 
-  // Get strategy bucket and pick action
-  const bucket = getBucket(strength, facingBet);
+  // Determine if facing a bet
+  const maxBet = Math.max(...state.players.filter(p => !p.isEliminated).map(p => p.currentBet));
+  const facingBet = maxBet > aiPlayer.currentBet;
+
+  // Get strategy bucket and apply personality
+  let bucket = getBucket(strength, facingBet);
+  if (effectivePersonality) {
+    bucket = applyPersonality(bucket, effectivePersonality);
+  }
+
   const strategyAction = pickAction(bucket);
 
   // Map strategy action to available actions
   const actionType = strategyAction.type;
-
-  // Find matching available action
   const matchedAction = available.find(a => a.type === actionType);
 
   if (matchedAction) {
@@ -42,8 +52,9 @@ export function getAIAction(state: GameState): PlayerAction {
       case 'call':
         return { type: 'call', amount: matchedAction.callAmount };
       case 'raise': {
+        const pot = getTotalPot(state.pots);
         const betSize = calculateBetSize(
-          state.pot,
+          pot,
           matchedAction.minRaise!,
           matchedAction.maxRaise!,
           strategyAction.betSizeMin ?? 0.5,
@@ -58,7 +69,6 @@ export function getAIAction(state: GameState): PlayerAction {
   }
 
   // Fallback: map strategy to closest available action
-  // If strategy says "call" but only "allin" is available, consider strength
   if (actionType === 'call' || actionType === 'raise') {
     const allinAction = available.find(a => a.type === 'allin');
     if (allinAction && strength > 0.4) {
@@ -76,6 +86,5 @@ export function getAIAction(state: GameState): PlayerAction {
   const foldAction = available.find(a => a.type === 'fold');
   if (foldAction) return { type: 'fold' };
 
-  // Last resort
   return { type: 'check' };
 }
