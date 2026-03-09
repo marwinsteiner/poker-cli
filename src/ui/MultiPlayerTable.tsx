@@ -6,6 +6,7 @@ import { getAvailableActions, isRoundComplete } from '../engine/betting.js';
 import { getAIAction } from '../ai/ai-player.js';
 import { getPositionLabel } from '../engine/positions.js';
 import { getTotalPot } from '../engine/side-pots.js';
+import { getLLMDecision } from '../llm/claude.js';
 import { MiniPlayerArea } from './MiniPlayerArea.js';
 import { PlayerArea } from './PlayerArea.js';
 import { CommunityCards } from './CommunityCards.js';
@@ -33,12 +34,16 @@ export function MultiPlayerTable({ state, dispatch, onGameOver, config }: MultiP
   const [raiseAction, setRaiseAction] = useState<AvailableAction | null>(null);
   const [revealCount, setRevealCount] = useState(0);
   const [showdownRevealed, setShowdownRevealed] = useState(false);
+  const [llmThinking, setLlmThinking] = useState(false);
+  const [llmReasoning, setLlmReasoning] = useState<string | null>(null);
   const processingRef = useRef(false);
   const handStartedRef = useRef(false);
   const gameOverRef = useRef(false);
   const inputModeRef = useRef<InputMode>('waiting');
 
   const isTournament = state.mode === 'tournament';
+  const isLLMMode = config.llmPlayer?.enabled ?? false;
+  const llmConfig = config.llmPlayer;
 
   // Blind clock (tournament only)
   const blindClock = useBlindClock(
@@ -56,8 +61,8 @@ export function MultiPlayerTable({ state, dispatch, onGameOver, config }: MultiP
     setInputMode(mode);
   }, []);
 
-  // Action timer
-  const isHumanTurn = !state.isHandComplete && !state.showdownRequired &&
+  // Action timer (only for manual human play, not LLM)
+  const isHumanTurn = !isLLMMode && !state.isHandComplete && !state.showdownRequired &&
     state.players[state.currentPlayerIndex]?.isHuman &&
     state.players[0]!.holeCards.length > 0 &&
     inputMode === 'action';
@@ -89,8 +94,8 @@ export function MultiPlayerTable({ state, dispatch, onGameOver, config }: MultiP
   useEffect(() => {
     if (processingRef.current) return;
 
-    // Don't re-run pipeline while human is choosing an action or sizing a bet
-    if (inputModeRef.current === 'action' || inputModeRef.current === 'bet') return;
+    // Don't re-run pipeline while human is choosing an action or sizing a bet (manual mode only)
+    if (!isLLMMode && (inputModeRef.current === 'action' || inputModeRef.current === 'bet')) return;
 
     const humanPlayer = state.players[0]!;
 
@@ -142,9 +147,7 @@ export function MultiPlayerTable({ state, dispatch, onGameOver, config }: MultiP
           return;
         }
 
-        // Advance street (also handles all-in run-out: after advancing,
-        // isRoundComplete will be true again if no one can act, and we
-        // keep advancing until we reach the river)
+        // Advance street
         processingRef.current = true;
         setTimeout(() => {
           dispatch({ type: 'ADVANCE_STREET' });
@@ -171,6 +174,27 @@ export function MultiPlayerTable({ state, dispatch, onGameOver, config }: MultiP
 
       // Human's turn
       if (currentPlayer.isHuman && !currentPlayer.hasFolded && !currentPlayer.isAllIn) {
+        if (isLLMMode) {
+          // LLM plays instead of human
+          processingRef.current = true;
+          setLlmThinking(true);
+          setLlmReasoning(null);
+          getLLMDecision(state, llmConfig!).then(decision => {
+            setLlmThinking(false);
+            setLlmReasoning(decision.reasoning);
+            dispatch({ type: 'LOG_MESSAGE', message: `[${llmConfig!.displayName}] ${decision.reasoning.slice(0, 120)}` });
+            dispatch({ type: 'PLAYER_ACTION', action: decision.action });
+            processingRef.current = false;
+          }).catch(err => {
+            setLlmThinking(false);
+            setLlmReasoning(`Error: ${err.message}`);
+            const actions = getAvailableActions(state);
+            const check = actions.find(a => a.type === 'check');
+            dispatch({ type: 'PLAYER_ACTION', action: check ? { type: 'check' } : { type: 'fold' } });
+            processingRef.current = false;
+          });
+          return;
+        }
         setInputModeTracked('action');
         return;
       }
@@ -256,12 +280,13 @@ export function MultiPlayerTable({ state, dispatch, onGameOver, config }: MultiP
       setTimeout(() => {
         setShowdownRevealed(false);
         setRevealCount(0);
+        setLlmReasoning(null);
         handStartedRef.current = true;
         dispatch({ type: 'START_NEW_HAND' });
         processingRef.current = false;
       }, 2500);
     }
-  }, [state, dispatch, onGameOver, config, isTournament, setInputModeTracked]);
+  }, [state, dispatch, onGameOver, config, isTournament, isLLMMode, llmConfig, setInputModeTracked]);
 
   // Update reveal count based on community cards
   useEffect(() => {
@@ -318,6 +343,13 @@ export function MultiPlayerTable({ state, dispatch, onGameOver, config }: MultiP
       paddingY={1}
       width={85}
     >
+      {/* LLM mode indicator */}
+      {isLLMMode && (
+        <Box justifyContent="center" marginBottom={1}>
+          <Text bold color="magenta">[LLM Mode: {llmConfig!.displayName}]</Text>
+        </Box>
+      )}
+
       {/* Blind Clock (tournament) */}
       {isTournament && state.blindSchedule && (
         <>
@@ -376,16 +408,25 @@ export function MultiPlayerTable({ state, dispatch, onGameOver, config }: MultiP
         </Box>
       )}
 
-      {/* Human Player Area */}
+      {/* Human/LLM Player Area */}
       <PlayerArea
         player={humanPlayer}
         isDealer={state.dealerIndex === 0}
         showCards={true}
         isWinner={state.winnerSeatIndices?.includes(0) ?? false}
-        positionBadge={getPositionLabel(0, state.dealerIndex, state.players)}
+        positionBadge={isLLMMode ? llmConfig!.displayName : getPositionLabel(0, state.dealerIndex, state.players)}
       />
 
       <Box height={1} />
+
+      {/* LLM Reasoning */}
+      {isLLMMode && llmReasoning && (
+        <Box paddingX={1} marginBottom={1}>
+          <Text color="magenta" wrap="wrap">
+            {`[${llmConfig!.displayName}] ${llmReasoning.length > 200 ? llmReasoning.slice(0, 200) + '...' : llmReasoning}`}
+          </Text>
+        </Box>
+      )}
 
       {/* Message Log */}
       <MessageLog messages={state.messageLog} />
@@ -395,7 +436,7 @@ export function MultiPlayerTable({ state, dispatch, onGameOver, config }: MultiP
       {/* Action Area */}
       <Box alignItems="center" gap={2}>
         <Box flexGrow={1}>
-          {inputMode === 'action' && (
+          {!isLLMMode && inputMode === 'action' && (
             <Box flexDirection="column" alignItems="center" width="100%">
               <Text bold>Your action:</Text>
               <ActionMenu
@@ -407,7 +448,7 @@ export function MultiPlayerTable({ state, dispatch, onGameOver, config }: MultiP
             </Box>
           )}
 
-          {inputMode === 'bet' && raiseAction && (
+          {!isLLMMode && inputMode === 'bet' && raiseAction && (
             <BetSlider
               minBet={raiseAction.minRaise!}
               maxBet={raiseAction.maxRaise!}
@@ -419,10 +460,12 @@ export function MultiPlayerTable({ state, dispatch, onGameOver, config }: MultiP
             />
           )}
 
-          {inputMode === 'waiting' && (
+          {(inputMode === 'waiting' || isLLMMode) && (
             <Box justifyContent="center" width="100%">
               <Text dimColor>
-                {state.players[state.currentPlayerIndex] && !state.players[state.currentPlayerIndex]!.isHuman
+                {llmThinking
+                  ? `${llmConfig!.displayName} is thinking...`
+                  : state.players[state.currentPlayerIndex] && !state.players[state.currentPlayerIndex]!.isHuman
                   ? `${state.players[state.currentPlayerIndex]!.name} is thinking...`
                   : 'Waiting...'}
               </Text>
@@ -430,8 +473,8 @@ export function MultiPlayerTable({ state, dispatch, onGameOver, config }: MultiP
           )}
         </Box>
 
-        {/* Action Timer */}
-        {state.actionTimerSeconds && isHumanTurn && (
+        {/* Action Timer (manual mode only) */}
+        {!isLLMMode && state.actionTimerSeconds && isHumanTurn && (
           <ActionTimerDisplay secondsRemaining={actionClock.secondsRemaining} />
         )}
       </Box>
@@ -439,9 +482,9 @@ export function MultiPlayerTable({ state, dispatch, onGameOver, config }: MultiP
       {/* Keyboard hints */}
       <Box justifyContent="center" marginTop={1}>
         <Text dimColor>
-          {inputMode === 'action' && '[Left/Right Select]  [Enter Confirm]  [Q Quit]'}
-          {inputMode === 'bet' && '[Up/Down Amount]  [1-4 Presets]  [Enter Confirm]  [Esc Back]'}
-          {inputMode === 'waiting' && '[Q Quit]'}
+          {!isLLMMode && inputMode === 'action' && '[Left/Right Select]  [Enter Confirm]  [Q Quit]'}
+          {!isLLMMode && inputMode === 'bet' && '[Up/Down Amount]  [1-4 Presets]  [Enter Confirm]  [Esc Back]'}
+          {(inputMode === 'waiting' || isLLMMode) && '[Q Quit]'}
         </Text>
       </Box>
     </Box>

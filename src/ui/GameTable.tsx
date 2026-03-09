@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
 import chalk from 'chalk';
-import type { GameState, PlayerAction, AvailableAction, AnimationPhase } from '../engine/types.js';
+import type { GameState, PlayerAction, AvailableAction, AnimationPhase, LLMPlayerConfig } from '../engine/types.js';
 import { getAvailableActions, isRoundComplete } from '../engine/betting.js';
 import { getAIAction } from '../ai/ai-player.js';
 import { getTotalPot } from '../engine/side-pots.js';
+import { getLLMDecision } from '../llm/claude.js';
 import { PlayerArea } from './PlayerArea.js';
 import { CommunityCards } from './CommunityCards.js';
 import { PotDisplay } from './PotDisplay.js';
@@ -17,20 +18,25 @@ interface GameTableProps {
   dispatch: (action: any) => void;
   onGameOver: () => void;
   startingChips: number;
+  llmConfig?: LLMPlayerConfig;
 }
 
 type InputMode = 'action' | 'bet' | 'waiting' | 'animating';
 
-export function GameTable({ state, dispatch, onGameOver, startingChips }: GameTableProps) {
+export function GameTable({ state, dispatch, onGameOver, startingChips, llmConfig }: GameTableProps) {
   const { exit } = useApp();
   const [inputMode, setInputMode] = useState<InputMode>('waiting');
   const [raiseAction, setRaiseAction] = useState<AvailableAction | null>(null);
   const [animPhase, setAnimPhase] = useState<AnimationPhase>('idle');
   const [revealCount, setRevealCount] = useState(0);
   const [showAICards, setShowAICards] = useState(false);
+  const [llmThinking, setLlmThinking] = useState(false);
+  const [llmReasoning, setLlmReasoning] = useState<string | null>(null);
   const processingRef = useRef(false);
   const handStartedRef = useRef(false);
   const gameOverRef = useRef(false);
+
+  const isLLMMode = llmConfig?.enabled ?? false;
 
   // Start new hand
   useEffect(() => {
@@ -143,6 +149,28 @@ export function GameTable({ state, dispatch, onGameOver, startingChips }: GameTa
 
       // Human's turn
       if (state.currentPlayerIndex === 0 && !humanPlayer.hasFolded && !humanPlayer.isAllIn) {
+        if (isLLMMode) {
+          // LLM plays instead of human
+          processingRef.current = true;
+          setLlmThinking(true);
+          setLlmReasoning(null);
+          getLLMDecision(state, llmConfig!).then(decision => {
+            setLlmThinking(false);
+            setLlmReasoning(decision.reasoning);
+            dispatch({ type: 'LOG_MESSAGE', message: `[${llmConfig!.displayName}] ${decision.reasoning.slice(0, 120)}` });
+            dispatch({ type: 'PLAYER_ACTION', action: decision.action });
+            processingRef.current = false;
+          }).catch(err => {
+            setLlmThinking(false);
+            setLlmReasoning(`Error: ${err.message}`);
+            // Fallback: check or fold
+            const actions = getAvailableActions(state);
+            const check = actions.find(a => a.type === 'check');
+            dispatch({ type: 'PLAYER_ACTION', action: check ? { type: 'check' } : { type: 'fold' } });
+            processingRef.current = false;
+          });
+          return;
+        }
         setInputMode('action');
         return;
       }
@@ -184,12 +212,13 @@ export function GameTable({ state, dispatch, onGameOver, startingChips }: GameTa
         }
         setShowAICards(false);
         setRevealCount(0);
+        setLlmReasoning(null);
         handStartedRef.current = true;
         dispatch({ type: 'START_NEW_HAND' });
         processingRef.current = false;
       }, 2500);
     }
-  }, [state, dispatch, onGameOver]);
+  }, [state, dispatch, onGameOver, isLLMMode, llmConfig]);
 
   // Update reveal count based on community cards
   useEffect(() => {
@@ -244,6 +273,8 @@ export function GameTable({ state, dispatch, onGameOver, startingChips }: GameTa
   // Find winning hand for display
   const winningResult = state.showdownResults?.find(r => r.potWinnings > 0);
 
+  const playerLabel = isLLMMode ? llmConfig!.displayName : 'YOU';
+
   return (
     <Box
       flexDirection="column"
@@ -251,8 +282,15 @@ export function GameTable({ state, dispatch, onGameOver, startingChips }: GameTa
       borderColor="green"
       paddingX={2}
       paddingY={1}
-      width={55}
+      width={60}
     >
+      {/* LLM mode indicator */}
+      {isLLMMode && (
+        <Box justifyContent="center" marginBottom={1}>
+          <Text bold color="magenta">[LLM Mode: {llmConfig!.displayName}]</Text>
+        </Box>
+      )}
+
       {/* AI Area */}
       <PlayerArea
         player={aiPlayer}
@@ -278,15 +316,25 @@ export function GameTable({ state, dispatch, onGameOver, startingChips }: GameTa
         </Box>
       )}
 
-      {/* Human Area */}
+      {/* Human/LLM Player Area */}
       <PlayerArea
         player={humanPlayer}
         isDealer={state.dealerIndex === 0}
         showCards={true}
         isWinner={isWinnerHuman}
+        positionBadge={isLLMMode ? llmConfig!.displayName : undefined}
       />
 
       <Box height={1} />
+
+      {/* LLM Reasoning */}
+      {isLLMMode && llmReasoning && (
+        <Box paddingX={1} marginBottom={1}>
+          <Text color="magenta" wrap="wrap">
+            {`[${llmConfig!.displayName}] ${llmReasoning.length > 200 ? llmReasoning.slice(0, 200) + '...' : llmReasoning}`}
+          </Text>
+        </Box>
+      )}
 
       {/* Message Log */}
       <MessageLog messages={state.messageLog} />
@@ -294,7 +342,7 @@ export function GameTable({ state, dispatch, onGameOver, startingChips }: GameTa
       <Box height={1} />
 
       {/* Action Area */}
-      {inputMode === 'action' && (
+      {!isLLMMode && inputMode === 'action' && (
         <Box flexDirection="column" alignItems="center">
           <Text bold>Your action:</Text>
           <ActionMenu
@@ -306,7 +354,7 @@ export function GameTable({ state, dispatch, onGameOver, startingChips }: GameTa
         </Box>
       )}
 
-      {inputMode === 'bet' && raiseAction && (
+      {!isLLMMode && inputMode === 'bet' && raiseAction && (
         <BetSlider
           minBet={raiseAction.minRaise!}
           maxBet={raiseAction.maxRaise!}
@@ -318,18 +366,24 @@ export function GameTable({ state, dispatch, onGameOver, startingChips }: GameTa
         />
       )}
 
-      {inputMode === 'waiting' && (
+      {(inputMode === 'waiting' || (isLLMMode && inputMode === 'action')) && (
         <Box justifyContent="center">
-          <Text dimColor>{state.currentPlayerIndex === 1 ? `${aiPlayer.name} is thinking...` : 'Waiting...'}</Text>
+          <Text dimColor>
+            {llmThinking
+              ? `${llmConfig!.displayName} is thinking...`
+              : state.currentPlayerIndex === 1
+              ? `${aiPlayer.name} is thinking...`
+              : 'Waiting...'}
+          </Text>
         </Box>
       )}
 
       {/* Keyboard hints */}
       <Box justifyContent="center" marginTop={1}>
         <Text dimColor>
-          {inputMode === 'action' && '[Left/Right Select]  [Enter Confirm]  [Q Quit]'}
-          {inputMode === 'bet' && '[Up/Down Amount]  [1-4 Presets]  [Enter Confirm]  [Esc Back]'}
-          {inputMode === 'waiting' && '[Q Quit]'}
+          {!isLLMMode && inputMode === 'action' && '[Left/Right Select]  [Enter Confirm]  [Q Quit]'}
+          {!isLLMMode && inputMode === 'bet' && '[Up/Down Amount]  [1-4 Presets]  [Enter Confirm]  [Esc Back]'}
+          {(inputMode === 'waiting' || isLLMMode) && '[Q Quit]'}
         </Text>
       </Box>
     </Box>

@@ -71,6 +71,12 @@ export interface ShowdownResult {
 
 export type GameMode = 'headsup' | 'cash' | 'tournament';
 
+export interface LLMPlayerConfig {
+  enabled: boolean;
+  model: string;
+  displayName: string;
+}
+
 export interface GameConfig {
   mode: GameMode;
   playerCount: number;
@@ -78,6 +84,7 @@ export interface GameConfig {
   smallBlind: number;
   blindSchedule?: BlindLevel[];
   actionTimerSeconds?: number;
+  llmPlayer?: LLMPlayerConfig;
 }
 
 export interface GameState {

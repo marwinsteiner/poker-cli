@@ -17,6 +17,14 @@ const MODE_OPTIONS: { mode: GameMode; label: string; desc: string }[] = [
   { mode: 'tournament', label: 'Tournament', desc: 'Increasing blinds, last one standing wins' },
 ];
 
+const LLM_MODEL_OPTIONS = [
+  { model: 'claude-sonnet-4-20250514', display: 'Claude Sonnet 4' },
+  { model: 'claude-opus-4-20250514', display: 'Claude Opus 4' },
+  { model: 'claude-haiku-4-5-20251001', display: 'Claude Haiku 4.5' },
+];
+
+const hasApiKey = !!process.env['ANTHROPIC_API_KEY'];
+
 export function TitleScreen({ onStart }: TitleScreenProps) {
   const { exit } = useApp();
   const [title, setTitle] = useState('');
@@ -31,6 +39,8 @@ export function TitleScreen({ onStart }: TitleScreenProps) {
   const [playerCount, setPlayerCount] = useState(6);
   const [blindSpeed, setBlindSpeed] = useState<BlindSpeed>('normal');
   const [actionTimer, setActionTimer] = useState(30);
+  const [llmEnabled, setLlmEnabled] = useState(false);
+  const [llmModelIndex, setLlmModelIndex] = useState(0);
   const [configField, setConfigField] = useState(0);
   const [buttonIndex, setButtonIndex] = useState(0);
 
@@ -46,20 +56,28 @@ export function TitleScreen({ onStart }: TitleScreenProps) {
   }, []);
 
   // Number of config fields depends on mode
-  const getConfigFields = () => {
+  const getConfigFields = (): readonly string[] => {
+    const base: string[] = [];
     switch (selectedMode) {
       case 'headsup':
-        return ['chips', 'blind', 'buttons'] as const;
+        base.push('chips', 'blind');
+        break;
       case 'cash':
-        return ['chips', 'blind', 'playerCount', 'buttons'] as const;
+        base.push('chips', 'blind', 'playerCount');
+        break;
       case 'tournament':
-        return ['chips', 'playerCount', 'blindSpeed', 'actionTimer', 'buttons'] as const;
+        base.push('chips', 'playerCount', 'blindSpeed', 'actionTimer');
+        break;
     }
+    base.push('llmPlayer');
+    if (llmEnabled) base.push('llmModel');
+    base.push('buttons');
+    return base;
   };
 
   const configFields = getConfigFields();
   const maxField = configFields.length - 1;
-  const currentFieldName = configFields[Math.min(configField, maxField)];
+  const currentFieldName = configFields[Math.min(configField, maxField)]!;
 
   useInput((input, key) => {
     if (input === 'q') {
@@ -92,6 +110,8 @@ export function TitleScreen({ onStart }: TitleScreenProps) {
         setBlindSpeed(prev => prev === 'normal' ? 'turbo' : prev === 'deep' ? 'normal' : 'turbo');
       }
       else if (currentFieldName === 'actionTimer') setActionTimer(prev => prev === 30 ? 15 : prev === 60 ? 30 : 15);
+      else if (currentFieldName === 'llmPlayer') setLlmEnabled(prev => !prev);
+      else if (currentFieldName === 'llmModel') setLlmModelIndex(prev => Math.max(0, prev - 1));
       else if (currentFieldName === 'buttons') setButtonIndex(prev => Math.max(0, prev - 1));
     } else if (key.rightArrow) {
       if (currentFieldName === 'chips') setChips(prev => Math.min(10000, prev + 100));
@@ -101,9 +121,13 @@ export function TitleScreen({ onStart }: TitleScreenProps) {
         setBlindSpeed(prev => prev === 'turbo' ? 'normal' : prev === 'normal' ? 'deep' : 'deep');
       }
       else if (currentFieldName === 'actionTimer') setActionTimer(prev => prev === 15 ? 30 : prev === 30 ? 60 : 60);
+      else if (currentFieldName === 'llmPlayer') setLlmEnabled(prev => !prev);
+      else if (currentFieldName === 'llmModel') setLlmModelIndex(prev => Math.min(LLM_MODEL_OPTIONS.length - 1, prev + 1));
       else if (currentFieldName === 'buttons') setButtonIndex(prev => Math.min(1, prev + 1));
     } else if (key.return) {
-      if (currentFieldName === 'buttons') {
+      if (currentFieldName === 'llmPlayer') {
+        setLlmEnabled(prev => !prev);
+      } else if (currentFieldName === 'buttons') {
         if (buttonIndex === 0) {
           // Start
           const config: GameConfig = {
@@ -115,6 +139,14 @@ export function TitleScreen({ onStart }: TitleScreenProps) {
           if (selectedMode === 'tournament') {
             config.blindSchedule = getBlindSchedule(blindSpeed);
             config.actionTimerSeconds = actionTimer;
+          }
+          if (llmEnabled) {
+            const selectedModel = LLM_MODEL_OPTIONS[llmModelIndex]!;
+            config.llmPlayer = {
+              enabled: true,
+              model: selectedModel.model,
+              displayName: selectedModel.display,
+            };
           }
           onStart(config);
         } else {
@@ -203,6 +235,28 @@ export function TitleScreen({ onStart }: TitleScreenProps) {
                 return (
                   <Text key={field}>
                     {prefix}Action Timer: {chalk.yellow(`${actionTimer}s`)}{hint}
+                  </Text>
+                );
+              }
+              if (field === 'llmPlayer') {
+                const statusText = llmEnabled
+                  ? chalk.green.bold('ON')
+                  : chalk.dim('OFF');
+                const keyHint = !hasApiKey && isActive
+                  ? chalk.red(' (set ANTHROPIC_API_KEY)')
+                  : '';
+                return (
+                  <Text key={field}>
+                    {prefix}LLM Player: {statusText}{keyHint}
+                    {isActive ? chalk.dim(' [Enter/Left/Right toggle]') : ''}
+                  </Text>
+                );
+              }
+              if (field === 'llmModel') {
+                const model = LLM_MODEL_OPTIONS[llmModelIndex]!;
+                return (
+                  <Text key={field}>
+                    {prefix}Model: {chalk.magenta(model.display)}{hint}
                   </Text>
                 );
               }

@@ -49,6 +49,7 @@ export function App() {
             dispatch={dispatch}
             onGameOver={handleGameOver}
             startingChips={config.startingChips}
+            llmConfig={config.llmPlayer}
           />
         );
       }

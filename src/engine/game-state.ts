@@ -34,9 +34,10 @@ export function createInitialState(config?: GameConfig): GameState {
   const chips = config?.startingChips ?? DEFAULT_STARTING_CHIPS;
   const sb = config?.smallBlind ?? DEFAULT_SMALL_BLIND;
 
-  // Create players: seat 0 = human, seats 1+ = AI with personalities
+  // Create players: seat 0 = human (or LLM), seats 1+ = AI with personalities
   const players: Player[] = [];
-  players.push(createPlayer(0, 'You', chips, true));
+  const humanName = config?.llmPlayer?.enabled ? config.llmPlayer.displayName : 'You';
+  players.push(createPlayer(0, humanName, chips, true));
 
   const aiCount = playerCount - 1;
   const personalities = assignPersonalities(aiCount);
