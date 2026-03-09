@@ -18,8 +18,10 @@ const MODE_OPTIONS: { mode: GameMode; label: string; desc: string }[] = [
 ];
 
 const LLM_MODEL_OPTIONS = [
-  { model: 'claude-sonnet-4-20250514', display: 'Claude Sonnet 4' },
+  { model: 'claude-opus-4-6', display: 'Claude Opus 4.6' },
+  { model: 'claude-sonnet-4-6', display: 'Claude Sonnet 4.6' },
   { model: 'claude-opus-4-20250514', display: 'Claude Opus 4' },
+  { model: 'claude-sonnet-4-20250514', display: 'Claude Sonnet 4' },
   { model: 'claude-haiku-4-5-20251001', display: 'Claude Haiku 4.5' },
 ];
 
