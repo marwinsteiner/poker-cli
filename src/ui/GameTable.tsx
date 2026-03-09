@@ -15,11 +15,12 @@ interface GameTableProps {
   state: GameState;
   dispatch: (action: any) => void;
   onGameOver: () => void;
+  startingChips: number;
 }
 
 type InputMode = 'action' | 'bet' | 'waiting' | 'animating';
 
-export function GameTable({ state, dispatch, onGameOver }: GameTableProps) {
+export function GameTable({ state, dispatch, onGameOver, startingChips }: GameTableProps) {
   const { exit } = useApp();
   const [inputMode, setInputMode] = useState<InputMode>('waiting');
   const [raiseAction, setRaiseAction] = useState<AvailableAction | null>(null);
@@ -137,7 +138,7 @@ export function GameTable({ state, dispatch, onGameOver }: GameTableProps) {
     }
 
     // Showdown → award pot
-    if (state.showdownRequired && state.winner) {
+    if (state.showdownRequired && state.winner && !state.isHandComplete) {
       processingRef.current = true;
       setShowAICards(true);
       setAnimPhase('showdown');
@@ -152,16 +153,21 @@ export function GameTable({ state, dispatch, onGameOver }: GameTableProps) {
       return;
     }
 
-    // Hand complete → check game over or start next
+    // Hand complete → check game over, AI rebuy, or start next
     if (state.isHandComplete) {
-      if ((state.players[0].chips === 0 || state.players[1].chips === 0) && !gameOverRef.current) {
+      // Human busted → game over
+      if (state.players[0].chips === 0 && !gameOverRef.current) {
         gameOverRef.current = true;
         setTimeout(() => onGameOver(), 2000);
         return;
       }
-      // Start next hand
+
       processingRef.current = true;
       setTimeout(() => {
+        // AI busted → auto-rebuy
+        if (state.players[1].chips === 0) {
+          dispatch({ type: 'REBUY_AI', amount: startingChips });
+        }
         setShowAICards(false);
         setRevealCount(0);
         handStartedRef.current = true;

@@ -87,7 +87,8 @@ export type GameAction =
   | { type: 'AWARD_POT'; winner: 'human' | 'ai' | 'tie' }
   | { type: 'LOG_MESSAGE'; message: string }
   | { type: 'SET_CONFIG'; startingChips: number; smallBlind: number }
-  | { type: 'RESET_GAME'; startingChips: number; smallBlind: number };
+  | { type: 'RESET_GAME'; startingChips: number; smallBlind: number }
+  | { type: 'REBUY_AI'; amount: number };
 
 export type AnimationPhase =
   | 'idle'

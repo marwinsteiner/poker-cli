@@ -347,6 +347,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         players,
         pot: 0,
         isHandComplete: true,
+        showdownRequired: false,
+        winner: null,
         messageLog: addLog(state, action.winner === 'tie'
           ? `Pot split: $${Math.floor(pot / 2)} each`
           : `${action.winner === 'human' ? 'You' : 'Dealer'} wins $${pot}`),
@@ -357,6 +359,16 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       return {
         ...state,
         messageLog: addLog(state, action.message),
+      };
+    }
+
+    case 'REBUY_AI': {
+      const players = [...state.players] as [Player, Player];
+      players[1] = { ...players[1], chips: action.amount };
+      return {
+        ...state,
+        players,
+        messageLog: addLog(state, `Dealer rebuys for $${action.amount}`),
       };
     }
 

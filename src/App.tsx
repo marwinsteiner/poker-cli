@@ -38,6 +38,7 @@ export function App() {
           state={state}
           dispatch={dispatch}
           onGameOver={handleGameOver}
+          startingChips={config.chips}
         />
       );
     case 'gameover':
