@@ -30,6 +30,7 @@ export function filterStateForClient(
       chips: p.chips,
       holeCards,
       currentBet: p.currentBet,
+      totalHandBet: p.totalHandBet,
       hasFolded: p.hasFolded,
       hasActed: p.hasActed,
       isAllIn: p.isAllIn,

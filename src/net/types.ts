@@ -96,6 +96,7 @@ export interface ClientPlayer {
   chips: number;
   holeCards: Card[];  // empty unless self or showdown reveal
   currentBet: number;
+  totalHandBet: number;
   hasFolded: boolean;
   hasActed: boolean;
   isAllIn: boolean;
