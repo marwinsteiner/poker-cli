@@ -10,12 +10,13 @@ interface TitleScreenProps {
   onStart: (config: GameConfig) => void;
 }
 
-type Step = 'mode' | 'config';
+type Step = 'mode' | 'config' | 'lan-name';
 
 const MODE_OPTIONS: { mode: GameMode; label: string; desc: string }[] = [
   { mode: 'headsup', label: 'Heads-Up (1v1)', desc: 'Classic 1-on-1 poker' },
   { mode: 'cash', label: 'Cash Game', desc: '6 or 8-handed with AI opponents' },
   { mode: 'tournament', label: 'Tournament', desc: 'Increasing blinds, last one standing wins' },
+  { mode: 'lan', label: 'Multiplayer (LAN)', desc: 'Play against friends on your network' },
 ];
 
 // index 0 = External Agent (file bridge, no API key needed)
@@ -49,6 +50,9 @@ export function TitleScreen({ onStart }: TitleScreenProps) {
   const [llmOptionIndex, setLlmOptionIndex] = useState(0);
   const [configField, setConfigField] = useState(0);
   const [buttonIndex, setButtonIndex] = useState(0);
+  const [lanPlayerName, setLanPlayerName] = useState('Player');
+  const [lanNameButtonIndex, setLanNameButtonIndex] = useState(0);
+  const [lanNameField, setLanNameField] = useState(0); // 0=name, 1=buttons
 
   const selectedMode = MODE_OPTIONS[modeIndex]!.mode;
   const selectedLlm = LLM_OPTIONS[llmOptionIndex]!;
@@ -98,8 +102,55 @@ export function TitleScreen({ onStart }: TitleScreenProps) {
       } else if (key.downArrow) {
         setModeIndex(prev => Math.min(MODE_OPTIONS.length - 1, prev + 1));
       } else if (key.return) {
-        setStep('config');
-        setConfigField(0);
+        if (MODE_OPTIONS[modeIndex]!.mode === 'lan') {
+          setStep('lan-name');
+          setLanNameField(0);
+          setLanNameButtonIndex(0);
+        } else {
+          setStep('config');
+          setConfigField(0);
+        }
+      }
+      return;
+    }
+
+    if (step === 'lan-name') {
+      if (key.upArrow) {
+        setLanNameField(prev => Math.max(0, prev - 1));
+      } else if (key.downArrow) {
+        setLanNameField(prev => Math.min(1, prev + 1));
+      } else if (lanNameField === 0) {
+        // Typing in the name field
+        if (key.backspace || key.delete) {
+          setLanPlayerName(prev => prev.slice(0, -1));
+        } else if (key.return) {
+          setLanNameField(1);
+        } else if (input && !key.ctrl && !key.meta && input.length === 1) {
+          setLanPlayerName(prev => (prev.length < 16 ? prev + input : prev));
+        }
+      } else if (lanNameField === 1) {
+        // Buttons row
+        if (key.leftArrow) {
+          setLanNameButtonIndex(prev => Math.max(0, prev - 1));
+        } else if (key.rightArrow) {
+          setLanNameButtonIndex(prev => Math.min(1, prev + 1));
+        } else if (key.return) {
+          if (lanNameButtonIndex === 0) {
+            const name = lanPlayerName.trim() || 'Player';
+            onStart({
+              mode: 'lan',
+              playerCount: 2,
+              startingChips: 1500,
+              smallBlind: 10,
+              lanPlayerName: name,
+            });
+          } else {
+            setStep('mode');
+          }
+        }
+      }
+      if (key.escape) {
+        setStep('mode');
       }
       return;
     }
@@ -195,6 +246,41 @@ export function TitleScreen({ onStart }: TitleScreenProps) {
           </Box>
           <Box height={1} />
           <Text dimColor>[Up/Down Select]  [Enter Confirm]  [Q Quit]</Text>
+        </>
+      )}
+
+      {step === 'lan-name' && (
+        <>
+          <Text bold>Multiplayer (LAN) - Enter Your Name:</Text>
+          <Box height={1} />
+          <Box flexDirection="column" paddingX={2}>
+            <Text>
+              {lanNameField === 0 ? chalk.green.bold('> ') : '  '}
+              Name: {chalk.yellow(lanPlayerName || '')}
+              {lanNameField === 0 ? chalk.dim('_') : ''}
+              {lanNameField === 0 ? chalk.dim(' [Type to edit]') : ''}
+            </Text>
+            <Box gap={4} marginTop={1}>
+              <Text
+                bold={lanNameField === 1 && lanNameButtonIndex === 0}
+                inverse={lanNameField === 1 && lanNameButtonIndex === 0}
+                color={lanNameField === 1 && lanNameButtonIndex === 0 ? 'green' : undefined}
+                dimColor={lanNameField !== 1}
+              >
+                {' Start '}
+              </Text>
+              <Text
+                bold={lanNameField === 1 && lanNameButtonIndex === 1}
+                inverse={lanNameField === 1 && lanNameButtonIndex === 1}
+                color={lanNameField === 1 && lanNameButtonIndex === 1 ? 'red' : undefined}
+                dimColor={lanNameField !== 1}
+              >
+                {' Back '}
+              </Text>
+            </Box>
+          </Box>
+          <Box height={1} />
+          <Text dimColor>[Type Name]  [Up/Down Navigate]  [Enter Confirm]  [Esc Back]</Text>
         </>
       )}
 
