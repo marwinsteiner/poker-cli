@@ -69,7 +69,7 @@ export interface ShowdownResult {
   potWinnings: number;
 }
 
-export type GameMode = 'headsup' | 'cash' | 'tournament';
+export type GameMode = 'headsup' | 'cash' | 'tournament' | 'lan';
 
 export type LLMProvider = 'api' | 'external';
 
@@ -88,6 +88,10 @@ export interface GameConfig {
   blindSchedule?: BlindLevel[];
   actionTimerSeconds?: number;
   llmPlayer?: LLMPlayerConfig;
+  // LAN multiplayer fields
+  lanRole?: 'host' | 'client';
+  lanPlayerName?: string;
+  lanMode?: 'headsup' | 'cash' | 'tournament';
 }
 
 export interface GameState {
@@ -156,4 +160,4 @@ export type AnimationPhase =
   | 'showdown'
   | 'awarding';
 
-export type Screen = 'title' | 'playing' | 'gameover';
+export type Screen = 'title' | 'multiplayer' | 'playing' | 'gameover';

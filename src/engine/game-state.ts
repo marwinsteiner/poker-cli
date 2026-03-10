@@ -74,6 +74,72 @@ export function createInitialState(config?: GameConfig): GameState {
   };
 }
 
+export function createLANState(
+  config: GameConfig,
+  hostName: string,
+  remoteNames: Map<number, string>,
+): GameState {
+  const lanMode = config.lanMode ?? 'headsup';
+  const playerCount = config.playerCount;
+  const chips = config.startingChips ?? DEFAULT_STARTING_CHIPS;
+  const sb = config.smallBlind ?? DEFAULT_SMALL_BLIND;
+
+  const players: Player[] = [];
+
+  // Seat 0 = host (always human)
+  players.push(createPlayer(0, hostName, chips, true));
+
+  // Fill remaining seats
+  const aiSeats: number[] = [];
+  for (let i = 1; i < playerCount; i++) {
+    if (remoteNames.has(i)) {
+      players.push(createPlayer(i, remoteNames.get(i)!, chips, true));
+    } else {
+      aiSeats.push(i);
+    }
+  }
+
+  // Assign AI personalities to unfilled seats (cash game only has AI fillers)
+  if (aiSeats.length > 0) {
+    const personalities = assignPersonalities(aiSeats.length);
+    for (let j = 0; j < aiSeats.length; j++) {
+      const seat = aiSeats[j]!;
+      const p = createPlayer(seat, personalities[j]!.name, chips, false);
+      p.personality = personalities[j]!;
+      players.push(p);
+    }
+  }
+
+  // Sort by seat index
+  players.sort((a, b) => a.seatIndex - b.seatIndex);
+
+  return {
+    players,
+    playerCount,
+    mode: lanMode,  // Use the underlying game mode so the reducer works correctly
+    communityCards: [],
+    deck: [],
+    pots: [],
+    street: 'preflop',
+    currentPlayerIndex: 0,
+    dealerIndex: 0,
+    smallBlind: sb,
+    bigBlind: sb * 2,
+    lastRaiseSize: sb * 2,
+    minRaise: sb * 2,
+    handNumber: 0,
+    isHandComplete: false,
+    winnerSeatIndices: null,
+    showdownResults: null,
+    showdownRequired: false,
+    messageLog: [],
+    eliminationOrder: [],
+    blindSchedule: config.blindSchedule,
+    currentBlindLevel: config.blindSchedule ? 0 : undefined,
+    actionTimerSeconds: config.actionTimerSeconds,
+  };
+}
+
 function addLog(state: GameState, message: string): string[] {
   const maxMessages = state.playerCount > 2 ? 8 : 5;
   const log = [...state.messageLog, message];
