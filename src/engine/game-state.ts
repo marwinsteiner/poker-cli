@@ -2,6 +2,7 @@ import type { GameState, GameAction, Player, Street, GameConfig, ShowdownResult 
 import { createDeck, shuffle, deal } from './deck.js';
 import { evaluateBestHand, compareHands } from './hand-evaluator.js';
 import { DEFAULT_STARTING_CHIPS, DEFAULT_SMALL_BLIND } from './constants.js';
+import { formatChips } from './chip-format.js';
 import { getNextActiveSeat, getNextNonEliminatedSeat, getSBSeat, getBBSeat, getFirstToActPreflop, getFirstToActPostflop } from './positions.js';
 import { calculateSidePots, awardPots } from './side-pots.js';
 import { assignPersonalities } from '../ai/personalities.js';
@@ -250,7 +251,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         players,
         pots: [{ amount: totalPosted, eligibleSeats: [] }],
         currentPlayerIndex: firstToAct,
-        messageLog: addLog(state, `${players[sbSeat]!.name} posts SB $${sbAmount}, ${players[bbSeat]!.name} posts BB $${bbAmount}`),
+        messageLog: addLog(state, `${players[sbSeat]!.name} posts SB ${formatChips(sbAmount)}, ${players[bbSeat]!.name} posts BB ${formatChips(bbAmount)}`),
       };
     }
 
@@ -324,9 +325,9 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           player.totalHandBet += callAmount;
           player.hasActed = true;
           player.isAllIn = player.chips === 0;
-          player.lastAction = player.isAllIn ? `Call All-In $${player.currentBet}` : `Call $${callAmount}`;
+          player.lastAction = player.isAllIn ? `Call All-In ${formatChips(player.currentBet)}` : `Call ${formatChips(callAmount)}`;
           if (pots.length > 0) pots[0]!.amount += callAmount;
-          log = addLog({ ...state, messageLog: log }, `${player.name} calls $${callAmount}`);
+          log = addLog({ ...state, messageLog: log }, `${player.name} calls ${formatChips(callAmount)}`);
           break;
         }
         case 'raise': {
@@ -338,7 +339,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           player.totalHandBet += amount;
           player.hasActed = true;
           player.isAllIn = player.chips === 0;
-          player.lastAction = `Raise to $${totalBet}`;
+          player.lastAction = `Raise to ${formatChips(totalBet)}`;
           if (pots.length > 0) pots[0]!.amount += amount;
           lastRaiseSize = raiseBy;
           minRaise = raiseBy;
@@ -348,7 +349,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
               p.hasActed = false;
             }
           }
-          log = addLog({ ...state, messageLog: log }, `${player.name} raises to $${totalBet}`);
+          log = addLog({ ...state, messageLog: log }, `${player.name} raises to ${formatChips(totalBet)}`);
           break;
         }
         case 'allin': {
@@ -360,7 +361,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           player.totalHandBet += allInAmount;
           player.hasActed = true;
           player.isAllIn = true;
-          player.lastAction = `All-In $${totalBet}`;
+          player.lastAction = `All-In ${formatChips(totalBet)}`;
           if (pots.length > 0) pots[0]!.amount += allInAmount;
           if (raiseBy > 0) {
             lastRaiseSize = Math.max(raiseBy, lastRaiseSize);
@@ -371,7 +372,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
               }
             }
           }
-          log = addLog({ ...state, messageLog: log }, `${player.name} goes all-in for $${totalBet}`);
+          log = addLog({ ...state, messageLog: log }, `${player.name} goes all-in for ${formatChips(totalBet)}`);
           break;
         }
       }
@@ -483,7 +484,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       // Build award message
       const awardMessages = action.winners
         .filter(w => w.amount > 0)
-        .map(w => `${players[w.seatIndex]!.name} wins $${w.amount}`);
+        .map(w => `${players[w.seatIndex]!.name} wins ${formatChips(w.amount)}`);
 
       return {
         ...state,
@@ -513,7 +514,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       return {
         ...state,
         players,
-        messageLog: addLog(state, `${players[action.seatIndex]!.name} rebuys for $${action.amount}`),
+        messageLog: addLog(state, `${players[action.seatIndex]!.name} rebuys for ${formatChips(action.amount)}`),
       };
     }
 
@@ -538,7 +539,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         smallBlind: action.small,
         bigBlind: action.big,
         currentBlindLevel: currentLevel,
-        messageLog: addLog(state, `Blinds increase to $${action.small}/$${action.big}`),
+        messageLog: addLog(state, `Blinds increase to ${formatChips(action.small)}/${formatChips(action.big)}`),
       };
     }
 

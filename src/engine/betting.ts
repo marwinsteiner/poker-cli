@@ -1,4 +1,5 @@
 import type { GameState, AvailableAction } from './types.js';
+import { formatChips } from './chip-format.js';
 
 export function getAvailableActions(state: GameState): AvailableAction[] {
   const player = state.players[state.currentPlayerIndex]!;
@@ -27,13 +28,13 @@ export function getAvailableActions(state: GameState): AvailableAction[] {
       // Calling costs all chips = call all-in
       actions.push({
         type: 'allin',
-        label: `Call All-In $${player.chips + player.currentBet}`,
+        label: `Call All-In ${formatChips(player.chips + player.currentBet)}`,
         minRaise: callAmount,
         maxRaise: callAmount,
       });
       return actions; // Can't raise if calling is already all-in
     }
-    actions.push({ type: 'call', label: `Call $${callAmount}`, callAmount });
+    actions.push({ type: 'call', label: `Call ${formatChips(callAmount)}`, callAmount });
   }
 
   // Raise/Bet (only if player has chips beyond calling)
@@ -49,7 +50,7 @@ export function getAvailableActions(state: GameState): AvailableAction[] {
       // Can only go all-in
       actions.push({
         type: 'allin',
-        label: `All-In $${player.chips + player.currentBet}`,
+        label: `All-In ${formatChips(player.chips + player.currentBet)}`,
         minRaise: raiseMax,
         maxRaise: raiseMax,
       });
@@ -64,7 +65,7 @@ export function getAvailableActions(state: GameState): AvailableAction[] {
       });
       actions.push({
         type: 'allin',
-        label: `All-In $${player.chips + player.currentBet}`,
+        label: `All-In ${formatChips(player.chips + player.currentBet)}`,
         minRaise: raiseMax,
         maxRaise: raiseMax,
       });
