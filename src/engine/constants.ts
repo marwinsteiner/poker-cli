@@ -46,6 +46,19 @@ export const HAND_RANK_NAMES: Record<HandRank, string> = {
 export const ALL_SUITS: Suit[] = ['hearts', 'diamonds', 'clubs', 'spades'];
 export const ALL_RANKS: Rank[] = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
 
-export const DEFAULT_STARTING_CHIPS = 1500;
-export const DEFAULT_SMALL_BLIND = 10;
-export const DEFAULT_BIG_BLIND = 20;
+export const DEFAULT_STARTING_CHIPS = 2000;  // $20 in cents
+export const DEFAULT_SMALL_BLIND = 10;       // $0.10 in cents
+export const DEFAULT_BIG_BLIND = 20;         // $0.20 in cents
+
+export const BLIND_PRESETS = [
+  { small: 10,   big: 20 },    // $0.10/$0.20
+  { small: 25,   big: 50 },    // $0.25/$0.50
+  { small: 50,   big: 75 },    // $0.50/$0.75
+  { small: 100,  big: 100 },   // $1/$1
+  { small: 100,  big: 200 },   // $1/$2
+  { small: 200,  big: 500 },   // $2/$5
+  { small: 1000, big: 2000 },  // $10/$20
+];
+
+export const STACK_PRESETS = [500, 1000, 2000, 5000, 10000, 20000];
+// $5, $10, $20, $50, $100, $200 in cents
