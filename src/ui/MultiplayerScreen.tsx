@@ -43,6 +43,7 @@ export function MultiplayerScreen({ playerName, onGameReady, onBack }: Multiplay
   const [stackPresetIndex, setStackPresetIndex] = useState(2); // default $20
   const [hostPlayerCount, setHostPlayerCount] = useState(6);
   const [hostBlindSpeed, setHostBlindSpeed] = useState<BlindSpeed>('normal');
+  const [hostMoneyMode, setHostMoneyMode] = useState<'play' | 'real'>('play');
   const [hostConfigField, setHostConfigField] = useState(0);
   const [hostButtonIndex, setHostButtonIndex] = useState(0);
 
@@ -88,6 +89,7 @@ export function MultiplayerScreen({ playerName, onGameReady, onBack }: Multiplay
     if (selectedHostMode !== 'headsup') fields.push('playerCount');
     fields.push('chips', 'blind');
     if (selectedHostMode === 'tournament') fields.push('blindSpeed');
+    fields.push('moneyMode');
     fields.push('buttons');
     return fields;
   };
@@ -142,6 +144,7 @@ export function MultiplayerScreen({ playerName, onGameReady, onBack }: Multiplay
           lanRole: 'host',
           lanPlayerName: playerName,
           lanMode: mode,
+          moneyMode: hostMoneyMode,
         };
 
         if (mode === 'tournament') {
@@ -246,6 +249,7 @@ export function MultiplayerScreen({ playerName, onGameReady, onBack }: Multiplay
           else if (currentHostField === 'chips') setStackPresetIndex(prev => Math.max(0, prev - 1));
           else if (currentHostField === 'blind') setBlindPresetIndex(prev => Math.max(0, prev - 1));
           else if (currentHostField === 'blindSpeed') setHostBlindSpeed(prev => prev === 'normal' ? 'turbo' : prev === 'deep' ? 'normal' : 'turbo');
+          else if (currentHostField === 'moneyMode') setHostMoneyMode(prev => prev === 'play' ? 'real' : 'play');
           else if (currentHostField === 'buttons') setHostButtonIndex(prev => Math.max(0, prev - 1));
         }
         else if (key.rightArrow) {
@@ -254,6 +258,7 @@ export function MultiplayerScreen({ playerName, onGameReady, onBack }: Multiplay
           else if (currentHostField === 'chips') setStackPresetIndex(prev => Math.min(STACK_PRESETS.length - 1, prev + 1));
           else if (currentHostField === 'blind') setBlindPresetIndex(prev => Math.min(BLIND_PRESETS.length - 1, prev + 1));
           else if (currentHostField === 'blindSpeed') setHostBlindSpeed(prev => prev === 'turbo' ? 'normal' : prev === 'normal' ? 'deep' : 'deep');
+          else if (currentHostField === 'moneyMode') setHostMoneyMode(prev => prev === 'play' ? 'real' : 'play');
           else if (currentHostField === 'buttons') setHostButtonIndex(prev => Math.min(1, prev + 1));
         }
         else if (key.return) {
@@ -380,6 +385,21 @@ export function MultiplayerScreen({ playerName, onGameReady, onBack }: Multiplay
                   <Text key={field}>
                     {prefix}Blind Speed: {chalk.yellow(speedLabel)}{hint}
                   </Text>
+                );
+              }
+              if (field === 'moneyMode') {
+                const moneyLabel = hostMoneyMode === 'play'
+                  ? chalk.green('Play Money')
+                  : chalk.yellow.bold('Real Money (USDC)');
+                return (
+                  <Box key={field} flexDirection="column">
+                    <Text>
+                      {prefix}Money Mode: {moneyLabel}{hint}
+                    </Text>
+                    {isActive && hostMoneyMode === 'real' && (
+                      <Text dimColor>{'    Requires Solana wallet with USDC balance'}</Text>
+                    )}
+                  </Box>
                 );
               }
               if (field === 'buttons') {
