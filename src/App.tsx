@@ -15,8 +15,9 @@ import type { LANClient } from './net/client.js';
 const DEFAULT_CONFIG: GameConfig = {
   mode: 'headsup',
   playerCount: 2,
-  startingChips: 1500,
+  startingChips: 2000,
   smallBlind: 10,
+  bigBlind: 20,
 };
 
 export function App() {

@@ -4,6 +4,8 @@ import chalk from 'chalk';
 import figlet from 'figlet';
 import type { GameConfig, GameMode, LLMProvider } from '../engine/types.js';
 import { getBlindSchedule, type BlindSpeed } from '../engine/blind-schedule.js';
+import { BLIND_PRESETS, STACK_PRESETS } from '../engine/constants.js';
+import { formatChips } from '../engine/chip-format.js';
 import { getBridgeDir } from '../llm/file-bridge.js';
 
 interface TitleScreenProps {
@@ -41,9 +43,12 @@ export function TitleScreen({ onStart }: TitleScreenProps) {
   const [modeIndex, setModeIndex] = useState(0);
 
   // Config fields
-  const [chips, setChips] = useState(1500);
-  const [blind, setBlind] = useState(10);
+  const [stackPresetIndex, setStackPresetIndex] = useState(2); // default $20
+  const [blindPresetIndex, setBlindPresetIndex] = useState(0); // default $0.10/$0.20
   const [playerCount, setPlayerCount] = useState(6);
+
+  const chips = STACK_PRESETS[stackPresetIndex]!;
+  const blindPreset = BLIND_PRESETS[blindPresetIndex]!;
   const [blindSpeed, setBlindSpeed] = useState<BlindSpeed>('normal');
   const [actionTimer, setActionTimer] = useState(30);
   const [llmEnabled, setLlmEnabled] = useState(false);
@@ -140,7 +145,7 @@ export function TitleScreen({ onStart }: TitleScreenProps) {
             onStart({
               mode: 'lan',
               playerCount: 2,
-              startingChips: 1500,
+              startingChips: 2000,
               smallBlind: 10,
               lanPlayerName: name,
             });
@@ -161,8 +166,8 @@ export function TitleScreen({ onStart }: TitleScreenProps) {
     } else if (key.downArrow) {
       setConfigField(prev => Math.min(maxField, prev + 1));
     } else if (key.leftArrow) {
-      if (currentFieldName === 'chips') setChips(prev => Math.max(100, prev - 100));
-      else if (currentFieldName === 'blind') setBlind(prev => Math.max(5, prev - 5));
+      if (currentFieldName === 'chips') setStackPresetIndex(prev => Math.max(0, prev - 1));
+      else if (currentFieldName === 'blind') setBlindPresetIndex(prev => Math.max(0, prev - 1));
       else if (currentFieldName === 'playerCount') setPlayerCount(prev => prev === 8 ? 6 : 6);
       else if (currentFieldName === 'blindSpeed') {
         setBlindSpeed(prev => prev === 'normal' ? 'turbo' : prev === 'deep' ? 'normal' : 'turbo');
@@ -172,8 +177,8 @@ export function TitleScreen({ onStart }: TitleScreenProps) {
       else if (currentFieldName === 'llmOption') setLlmOptionIndex(prev => Math.max(0, prev - 1));
       else if (currentFieldName === 'buttons') setButtonIndex(prev => Math.max(0, prev - 1));
     } else if (key.rightArrow) {
-      if (currentFieldName === 'chips') setChips(prev => Math.min(10000, prev + 100));
-      else if (currentFieldName === 'blind') setBlind(prev => Math.min(100, prev + 5));
+      if (currentFieldName === 'chips') setStackPresetIndex(prev => Math.min(STACK_PRESETS.length - 1, prev + 1));
+      else if (currentFieldName === 'blind') setBlindPresetIndex(prev => Math.min(BLIND_PRESETS.length - 1, prev + 1));
       else if (currentFieldName === 'playerCount') setPlayerCount(prev => prev === 6 ? 8 : 8);
       else if (currentFieldName === 'blindSpeed') {
         setBlindSpeed(prev => prev === 'turbo' ? 'normal' : prev === 'normal' ? 'deep' : 'deep');
@@ -192,7 +197,8 @@ export function TitleScreen({ onStart }: TitleScreenProps) {
             mode: selectedMode,
             playerCount: selectedMode === 'headsup' ? 2 : playerCount,
             startingChips: chips,
-            smallBlind: selectedMode === 'tournament' ? getBlindSchedule(blindSpeed)[0]!.small : blind,
+            smallBlind: selectedMode === 'tournament' ? getBlindSchedule(blindSpeed)[0]!.small : blindPreset.small,
+            bigBlind: selectedMode === 'tournament' ? undefined : blindPreset.big,
           };
           if (selectedMode === 'tournament') {
             config.blindSchedule = getBlindSchedule(blindSpeed);
@@ -297,14 +303,14 @@ export function TitleScreen({ onStart }: TitleScreenProps) {
               if (field === 'chips') {
                 return (
                   <Text key={field}>
-                    {prefix}Starting Chips: {chalk.yellow(`$${chips}`)}{hint}
+                    {prefix}Starting Chips: {chalk.yellow(formatChips(chips))}{hint}
                   </Text>
                 );
               }
               if (field === 'blind') {
                 return (
                   <Text key={field}>
-                    {prefix}Small Blind: {chalk.yellow(`$${blind}`)}{hint}
+                    {prefix}Blinds: {chalk.yellow(`${formatChips(blindPreset.small)}/${formatChips(blindPreset.big)}`)}{hint}
                   </Text>
                 );
               }
