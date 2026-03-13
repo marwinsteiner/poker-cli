@@ -93,6 +93,8 @@ export interface GameConfig {
   lanRole?: 'host' | 'client';
   lanPlayerName?: string;
   lanMode?: 'headsup' | 'cash' | 'tournament';
+  // Money mode
+  moneyMode?: 'play' | 'real';
 }
 
 export interface GameState {
