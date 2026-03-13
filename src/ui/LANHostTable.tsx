@@ -443,6 +443,7 @@ export function LANHostTable({ host, config, onGameOver }: LANHostTableProps) {
               isCurrent={gameState.currentPlayerIndex === p.seatIndex && !gameState.isHandComplete}
               isWinner={isWinner}
               showdownResult={showdownResult}
+              showCards={showdownRevealed && !p.hasFolded}
             />
           );
         })}
