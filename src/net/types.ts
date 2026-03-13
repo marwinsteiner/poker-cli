@@ -56,6 +56,23 @@ export interface GameOverMessage {
   finalChips: { seatIndex: number; name: string; chips: number }[];
 }
 
+export interface BuyInRequiredMessage {
+  type: 'BUYIN_REQUIRED';
+  amount: number;
+}
+
+export interface BuyInConfirmedMessage {
+  type: 'BUYIN_CONFIRMED';
+  seatIndex: number;
+}
+
+export interface SettlementMessage {
+  type: 'SETTLEMENT';
+  seatIndex: number;
+  amount: number;
+  txSignature: string;
+}
+
 export type HostMessage =
   | SeatAssignedMessage
   | PlayerJoinedMessage
@@ -63,7 +80,10 @@ export type HostMessage =
   | GameStartedMessage
   | StateUpdateMessage
   | YourTurnMessage
-  | GameOverMessage;
+  | GameOverMessage
+  | BuyInRequiredMessage
+  | BuyInConfirmedMessage
+  | SettlementMessage;
 
 // ── Client → Host messages ──────────────────────────────────────────
 
@@ -81,10 +101,16 @@ export interface LeaveMessage {
   type: 'LEAVE';
 }
 
+export interface WalletInfoMessage {
+  type: 'WALLET_INFO';
+  publicKey: string;
+}
+
 export type ClientMessage =
   | JoinMessage
   | PlayerActionMessage
-  | LeaveMessage;
+  | LeaveMessage
+  | WalletInfoMessage;
 
 // ── Filtered game state for clients ─────────────────────────────────
 
