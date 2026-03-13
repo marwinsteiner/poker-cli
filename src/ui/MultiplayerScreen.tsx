@@ -5,6 +5,8 @@ import type { GameConfig, GameMode } from '../engine/types.js';
 import { getBlindSchedule, type BlindSpeed } from '../engine/blind-schedule.js';
 import { BLIND_PRESETS, STACK_PRESETS } from '../engine/constants.js';
 import { formatChips } from '../engine/chip-format.js';
+import { loadWalletFromFile, loadWalletFromKey, getUSDCBalance } from '../net/solana-wallet.js';
+import { Connection, Keypair } from '@solana/web3.js';
 import { LANHost } from '../net/host.js';
 import { LANClient } from '../net/client.js';
 import { DiscoveryListener } from '../net/discovery.js';
@@ -22,7 +24,7 @@ interface MultiplayerScreenProps {
   onBack: () => void;
 }
 
-type SubScreen = 'menu' | 'host-config' | 'hosting' | 'lobby' | 'connecting' | 'waiting';
+type SubScreen = 'menu' | 'host-config' | 'hosting' | 'lobby' | 'connecting' | 'waiting' | 'wallet-setup';
 
 type HostGameMode = 'headsup' | 'cash' | 'tournament';
 
@@ -65,6 +67,17 @@ export function MultiplayerScreen({ playerName, onGameReady, onBack }: Multiplay
   const [mySeat, setMySeat] = useState<number | null>(null);
   const [waitingPlayers, setWaitingPlayers] = useState<{ seatIndex: number; name: string }[]>([]);
   const [connectTarget, setConnectTarget] = useState('');
+
+  // Wallet setup (real money)
+  const [walletInput, setWalletInput] = useState('');
+  const [walletMethod, setWalletMethod] = useState<'file' | 'key'>('file');
+  const [walletField, setWalletField] = useState(0); // 0=method, 1=input, 2=buttons
+  const [walletButtonIndex, setWalletButtonIndex] = useState(0);
+  const [walletKeypair, setWalletKeypair] = useState<Keypair | null>(null);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [walletError, setWalletError] = useState<string | null>(null);
+  const [walletLoading, setWalletLoading] = useState(false);
+  const [pendingGameCallback, setPendingGameCallback] = useState<(() => void) | null>(null);
 
   const hostRef = useRef(host);
   hostRef.current = host;
@@ -127,31 +140,50 @@ export function MultiplayerScreen({ playerName, onGameReady, onBack }: Multiplay
     setSubScreen('hosting');
   }, [playerName, selectedHostMode, hostPlayerCount, blindPresetIndex, stackPresetIndex]);
 
+  const buildHostConfig = useCallback((): GameConfig => {
+    const mode = selectedHostMode;
+    const pc = mode === 'headsup' ? 2 : hostPlayerCount;
+    const sb = mode === 'tournament' ? getBlindSchedule(hostBlindSpeed)[0]!.small : hostBlindPreset.small;
+
+    const config: GameConfig = {
+      mode: 'lan',
+      playerCount: pc,
+      startingChips: hostChips,
+      smallBlind: sb,
+      bigBlind: mode === 'tournament' ? undefined : hostBlindPreset.big,
+      lanRole: 'host',
+      lanPlayerName: playerName,
+      lanMode: mode,
+      moneyMode: hostMoneyMode,
+    };
+
+    if (mode === 'tournament') {
+      config.blindSchedule = getBlindSchedule(hostBlindSpeed);
+      config.actionTimerSeconds = 30;
+    }
+    return config;
+  }, [selectedHostMode, hostPlayerCount, hostBlindSpeed, hostBlindPreset, hostChips, playerName, hostMoneyMode]);
+
   // Auto-start when ready
   useEffect(() => {
     if (hostReady && host) {
       const timer = setTimeout(() => {
-        const mode = selectedHostMode;
-        const pc = mode === 'headsup' ? 2 : hostPlayerCount;
-        const sb = mode === 'tournament' ? getBlindSchedule(hostBlindSpeed)[0]!.small : hostBlindPreset.small;
-
-        const config: GameConfig = {
-          mode: 'lan',
-          playerCount: pc,
-          startingChips: hostChips,
-          smallBlind: sb,
-          bigBlind: mode === 'tournament' ? undefined : hostBlindPreset.big,
-          lanRole: 'host',
-          lanPlayerName: playerName,
-          lanMode: mode,
-          moneyMode: hostMoneyMode,
-        };
-
-        if (mode === 'tournament') {
-          config.blindSchedule = getBlindSchedule(hostBlindSpeed);
-          config.actionTimerSeconds = 30;
+        if (hostMoneyMode === 'real' && !walletKeypair) {
+          // Need wallet setup before starting
+          setPendingGameCallback(() => () => {
+            const config = buildHostConfig();
+            host.setGameStarted();
+            host.sendGameStarted();
+            onGameReady(config, 'host', host, undefined, 0);
+          });
+          setSubScreen('wallet-setup');
+          setWalletField(0);
+          setWalletInput('');
+          setWalletError(null);
+          return;
         }
 
+        const config = buildHostConfig();
         host.setGameStarted();
         host.sendGameStarted();
         onGameReady(config, 'host', host, undefined, 0);
@@ -311,6 +343,71 @@ export function MultiplayerScreen({ playerName, onGameReady, onBack }: Multiplay
           client?.disconnect();
           setClient(null);
           setSubScreen('lobby');
+        }
+        break;
+      }
+
+      case 'wallet-setup': {
+        if (key.upArrow) setWalletField(prev => Math.max(0, prev - 1));
+        else if (key.downArrow) setWalletField(prev => Math.min(2, prev + 1));
+        else if (walletField === 0) {
+          // Method selection
+          if (key.leftArrow || key.rightArrow) {
+            setWalletMethod(prev => prev === 'file' ? 'key' : 'file');
+          } else if (key.return) setWalletField(1);
+        } else if (walletField === 1) {
+          // Text input
+          if (key.backspace || key.delete) {
+            setWalletInput(prev => prev.slice(0, -1));
+          } else if (key.return) {
+            setWalletField(2);
+          } else if (input && !key.ctrl && !key.meta && input.length === 1) {
+            setWalletInput(prev => prev + input);
+          }
+        } else if (walletField === 2) {
+          // Buttons
+          if (key.leftArrow) setWalletButtonIndex(0);
+          else if (key.rightArrow) setWalletButtonIndex(1);
+          else if (key.return) {
+            if (walletButtonIndex === 0 && !walletLoading) {
+              // Connect wallet
+              setWalletLoading(true);
+              setWalletError(null);
+              try {
+                const kp = walletMethod === 'file'
+                  ? loadWalletFromFile(walletInput.trim())
+                  : loadWalletFromKey(walletInput.trim());
+                const conn = new Connection('https://api.mainnet-beta.solana.com');
+                getUSDCBalance(conn, kp.publicKey).then(balance => {
+                  setWalletKeypair(kp);
+                  setWalletBalance(balance);
+                  setWalletLoading(false);
+                  if (balance < hostChips) {
+                    setWalletError(`Insufficient USDC: need ${formatChips(hostChips)}, have ${formatChips(balance)}`);
+                  }
+                }).catch(err => {
+                  setWalletLoading(false);
+                  setWalletError(`Failed to check balance: ${err.message}`);
+                });
+              } catch (err: any) {
+                setWalletLoading(false);
+                setWalletError(`Failed to load wallet: ${err.message}`);
+              }
+            } else if (walletButtonIndex === 1) {
+              // Skip / proceed (for host with confirmed wallet)
+              if (walletKeypair && walletBalance !== null && walletBalance >= hostChips) {
+                if (pendingGameCallback) {
+                  pendingGameCallback();
+                  setPendingGameCallback(null);
+                }
+              }
+            }
+          }
+        }
+        if (key.escape) {
+          setSubScreen('hosting');
+          setWalletKeypair(null);
+          setWalletBalance(null);
         }
         break;
       }
@@ -514,6 +611,72 @@ export function MultiplayerScreen({ playerName, onGameReady, onBack }: Multiplay
           <Text dimColor>Waiting for more players...</Text>
           <Box height={1} />
           <Text dimColor>[Esc Leave]</Text>
+        </>
+      )}
+
+      {/* Wallet Setup (Real Money) */}
+      {subScreen === 'wallet-setup' && (
+        <>
+          <Text bold color="yellow">Wallet Setup (USDC Real Money)</Text>
+          <Box height={1} />
+          <Box flexDirection="column" paddingX={2}>
+            <Text>
+              {walletField === 0 ? chalk.green.bold('> ') : '  '}
+              Method: {chalk.yellow(walletMethod === 'file' ? 'Keypair File' : 'Private Key')}
+              {walletField === 0 ? chalk.dim(' [Left/Right]') : ''}
+            </Text>
+            <Text>
+              {walletField === 1 ? chalk.green.bold('> ') : '  '}
+              {walletMethod === 'file' ? 'File path: ' : 'Private key: '}
+              {chalk.yellow(walletInput || '')}
+              {walletField === 1 ? chalk.dim('_') : ''}
+            </Text>
+
+            {walletKeypair && walletBalance !== null && (
+              <Box flexDirection="column" marginTop={1}>
+                <Text color="green">
+                  Wallet: {walletKeypair.publicKey.toBase58().slice(0, 8)}...
+                </Text>
+                <Text>
+                  USDC Balance: {chalk.yellow(formatChips(walletBalance))}
+                  {walletBalance >= hostChips
+                    ? chalk.green(' (sufficient)')
+                    : chalk.red(` (need ${formatChips(hostChips)})`)}
+                </Text>
+              </Box>
+            )}
+
+            {walletError && (
+              <Text color="red">{walletError}</Text>
+            )}
+
+            {walletLoading && (
+              <Text dimColor>Loading wallet...</Text>
+            )}
+
+            <Box gap={4} marginTop={1}>
+              <Text
+                bold={walletField === 2 && walletButtonIndex === 0}
+                inverse={walletField === 2 && walletButtonIndex === 0}
+                color={walletField === 2 && walletButtonIndex === 0 ? 'green' : undefined}
+                dimColor={walletField !== 2}
+              >
+                {walletKeypair ? ' Start Game ' : ' Connect Wallet '}
+              </Text>
+              <Text
+                bold={walletField === 2 && walletButtonIndex === 1}
+                inverse={walletField === 2 && walletButtonIndex === 1}
+                color={walletField === 2 && walletButtonIndex === 1 ? 'green' : undefined}
+                dimColor={walletField !== 2}
+              >
+                {walletKeypair && walletBalance !== null && walletBalance >= hostChips
+                  ? ' Confirm & Start '
+                  : ' --- '}
+              </Text>
+            </Box>
+          </Box>
+          <Box height={1} />
+          <Text dimColor>[Up/Down Navigate]  [Type to edit]  [Enter Confirm]  [Esc Back]</Text>
         </>
       )}
     </Box>
