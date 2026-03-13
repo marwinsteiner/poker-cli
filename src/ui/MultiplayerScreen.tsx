@@ -3,6 +3,8 @@ import { Box, Text, useInput, useApp } from 'ink';
 import chalk from 'chalk';
 import type { GameConfig, GameMode } from '../engine/types.js';
 import { getBlindSchedule, type BlindSpeed } from '../engine/blind-schedule.js';
+import { BLIND_PRESETS, STACK_PRESETS } from '../engine/constants.js';
+import { formatChips } from '../engine/chip-format.js';
 import { LANHost } from '../net/host.js';
 import { LANClient } from '../net/client.js';
 import { DiscoveryListener } from '../net/discovery.js';
@@ -37,12 +39,15 @@ export function MultiplayerScreen({ playerName, onGameReady, onBack }: Multiplay
 
   // Host config
   const [hostModeIndex, setHostModeIndex] = useState(0);
-  const [hostChips, setHostChips] = useState(1500);
-  const [hostBlind, setHostBlind] = useState(10);
+  const [blindPresetIndex, setBlindPresetIndex] = useState(0);
+  const [stackPresetIndex, setStackPresetIndex] = useState(2); // default $20
   const [hostPlayerCount, setHostPlayerCount] = useState(6);
   const [hostBlindSpeed, setHostBlindSpeed] = useState<BlindSpeed>('normal');
   const [hostConfigField, setHostConfigField] = useState(0);
   const [hostButtonIndex, setHostButtonIndex] = useState(0);
+
+  const hostChips = STACK_PRESETS[stackPresetIndex]!;
+  const hostBlindPreset = BLIND_PRESETS[blindPresetIndex]!;
 
   // Host waiting room
   const [host, setHost] = useState<LANHost | null>(null);
@@ -118,7 +123,7 @@ export function MultiplayerScreen({ playerName, onGameReady, onBack }: Multiplay
     setConnectedPlayers([]);
     setHostReady(false);
     setSubScreen('hosting');
-  }, [playerName, selectedHostMode, hostPlayerCount]);
+  }, [playerName, selectedHostMode, hostPlayerCount, blindPresetIndex, stackPresetIndex]);
 
   // Auto-start when ready
   useEffect(() => {
@@ -126,13 +131,14 @@ export function MultiplayerScreen({ playerName, onGameReady, onBack }: Multiplay
       const timer = setTimeout(() => {
         const mode = selectedHostMode;
         const pc = mode === 'headsup' ? 2 : hostPlayerCount;
-        const sb = mode === 'tournament' ? getBlindSchedule(hostBlindSpeed)[0]!.small : hostBlind;
+        const sb = mode === 'tournament' ? getBlindSchedule(hostBlindSpeed)[0]!.small : hostBlindPreset.small;
 
         const config: GameConfig = {
           mode: 'lan',
           playerCount: pc,
           startingChips: hostChips,
           smallBlind: sb,
+          bigBlind: mode === 'tournament' ? undefined : hostBlindPreset.big,
           lanRole: 'host',
           lanPlayerName: playerName,
           lanMode: mode,
@@ -149,7 +155,7 @@ export function MultiplayerScreen({ playerName, onGameReady, onBack }: Multiplay
       }, 1500);
       return () => clearTimeout(timer);
     }
-  }, [hostReady, host, selectedHostMode, hostPlayerCount, hostChips, hostBlind, hostBlindSpeed, playerName, onGameReady]);
+  }, [hostReady, host, selectedHostMode, hostPlayerCount, hostChips, hostBlindPreset, hostBlindSpeed, playerName, onGameReady]);
 
   // Start discovery listener for lobby
   const startLobby = useCallback(() => {
@@ -237,16 +243,16 @@ export function MultiplayerScreen({ playerName, onGameReady, onBack }: Multiplay
         else if (key.leftArrow) {
           if (currentHostField === 'mode') setHostModeIndex(prev => Math.max(0, prev - 1));
           else if (currentHostField === 'playerCount') setHostPlayerCount(prev => prev === 8 ? 6 : 6);
-          else if (currentHostField === 'chips') setHostChips(prev => Math.max(100, prev - 100));
-          else if (currentHostField === 'blind') setHostBlind(prev => Math.max(5, prev - 5));
+          else if (currentHostField === 'chips') setStackPresetIndex(prev => Math.max(0, prev - 1));
+          else if (currentHostField === 'blind') setBlindPresetIndex(prev => Math.max(0, prev - 1));
           else if (currentHostField === 'blindSpeed') setHostBlindSpeed(prev => prev === 'normal' ? 'turbo' : prev === 'deep' ? 'normal' : 'turbo');
           else if (currentHostField === 'buttons') setHostButtonIndex(prev => Math.max(0, prev - 1));
         }
         else if (key.rightArrow) {
           if (currentHostField === 'mode') setHostModeIndex(prev => Math.min(HOST_MODE_OPTIONS.length - 1, prev + 1));
           else if (currentHostField === 'playerCount') setHostPlayerCount(prev => prev === 6 ? 8 : 8);
-          else if (currentHostField === 'chips') setHostChips(prev => Math.min(10000, prev + 100));
-          else if (currentHostField === 'blind') setHostBlind(prev => Math.min(100, prev + 5));
+          else if (currentHostField === 'chips') setStackPresetIndex(prev => Math.min(STACK_PRESETS.length - 1, prev + 1));
+          else if (currentHostField === 'blind') setBlindPresetIndex(prev => Math.min(BLIND_PRESETS.length - 1, prev + 1));
           else if (currentHostField === 'blindSpeed') setHostBlindSpeed(prev => prev === 'turbo' ? 'normal' : prev === 'normal' ? 'deep' : 'deep');
           else if (currentHostField === 'buttons') setHostButtonIndex(prev => Math.min(1, prev + 1));
         }
@@ -356,14 +362,14 @@ export function MultiplayerScreen({ playerName, onGameReady, onBack }: Multiplay
               if (field === 'chips') {
                 return (
                   <Text key={field}>
-                    {prefix}Starting Chips: {chalk.yellow(`$${hostChips}`)}{hint}
+                    {prefix}Starting Chips: {chalk.yellow(formatChips(hostChips))}{hint}
                   </Text>
                 );
               }
               if (field === 'blind') {
                 return (
                   <Text key={field}>
-                    {prefix}Small Blind: {chalk.yellow(`$${hostBlind}`)}{hint}
+                    {prefix}Blinds: {chalk.yellow(`${formatChips(hostBlindPreset.small)}/${formatChips(hostBlindPreset.big)}`)}{hint}
                   </Text>
                 );
               }

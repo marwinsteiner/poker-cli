@@ -85,6 +85,7 @@ export interface GameConfig {
   playerCount: number;
   startingChips: number;
   smallBlind: number;
+  bigBlind?: number;
   blindSchedule?: BlindLevel[];
   actionTimerSeconds?: number;
   llmPlayer?: LLMPlayerConfig;

@@ -33,6 +33,7 @@ export function createInitialState(config?: GameConfig): GameState {
   const playerCount = config?.playerCount ?? 2;
   const chips = config?.startingChips ?? DEFAULT_STARTING_CHIPS;
   const sb = config?.smallBlind ?? DEFAULT_SMALL_BLIND;
+  const bb = config?.bigBlind ?? sb * 2;
 
   // Create players: seat 0 = human (or LLM), seats 1+ = AI with personalities
   const players: Player[] = [];
@@ -58,9 +59,9 @@ export function createInitialState(config?: GameConfig): GameState {
     currentPlayerIndex: 0,
     dealerIndex: 0,
     smallBlind: sb,
-    bigBlind: sb * 2,
-    lastRaiseSize: sb * 2,
-    minRaise: sb * 2,
+    bigBlind: bb,
+    lastRaiseSize: bb,
+    minRaise: bb,
     handNumber: 0,
     isHandComplete: false,
     winnerSeatIndices: null,
@@ -83,6 +84,7 @@ export function createLANState(
   const playerCount = config.playerCount;
   const chips = config.startingChips ?? DEFAULT_STARTING_CHIPS;
   const sb = config.smallBlind ?? DEFAULT_SMALL_BLIND;
+  const bb = config.bigBlind ?? sb * 2;
 
   const players: Player[] = [];
 
@@ -124,9 +126,9 @@ export function createLANState(
     currentPlayerIndex: 0,
     dealerIndex: 0,
     smallBlind: sb,
-    bigBlind: sb * 2,
-    lastRaiseSize: sb * 2,
-    minRaise: sb * 2,
+    bigBlind: bb,
+    lastRaiseSize: bb,
+    minRaise: bb,
     handNumber: 0,
     isHandComplete: false,
     winnerSeatIndices: null,
