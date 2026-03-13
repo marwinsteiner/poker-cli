@@ -8,6 +8,8 @@ import { getPositionLabel } from '../engine/positions.js';
 import { getTotalPot } from '../engine/side-pots.js';
 import { createLANState, gameReducer } from '../engine/game-state.js';
 import { formatChips } from '../engine/chip-format.js';
+import { EscrowManager } from '../net/escrow.js';
+import { Connection } from '@solana/web3.js';
 import { useBlindClock } from '../hooks/useBlindClock.js';
 import { useActionClock } from '../hooks/useActionClock.js';
 import { MiniPlayerArea } from './MiniPlayerArea.js';
@@ -47,6 +49,12 @@ export function LANHostTable({ host, config, onGameOver }: LANHostTableProps) {
   const [raiseAction, setRaiseAction] = useState<AvailableAction | null>(null);
   const [revealCount, setRevealCount] = useState(0);
   const [showdownRevealed, setShowdownRevealed] = useState(false);
+  const isRealMoney = config.moneyMode === 'real';
+  const [escrow] = useState<EscrowManager | null>(() => {
+    if (!isRealMoney) return null;
+    const conn = new Connection('https://api.mainnet-beta.solana.com');
+    return new EscrowManager(conn);
+  });
   const processingRef = useRef(false);
   const handStartedRef = useRef(false);
   const gameOverRef = useRef(false);
@@ -58,6 +66,16 @@ export function LANHostTable({ host, config, onGameOver }: LANHostTableProps) {
   const dispatch = useCallback((action: any) => {
     setGameState(prev => gameReducer(prev, action));
   }, []);
+
+  // Settle escrow for real-money games
+  const settleEscrow = useCallback(async (players: { seatIndex: number; chips: number }[]) => {
+    if (!escrow) return;
+    try {
+      await escrow.settleAll(players);
+    } catch (err) {
+      console.error('Escrow settlement failed:', err);
+    }
+  }, [escrow]);
 
   const setInputModeTracked = useCallback((mode: InputMode) => {
     inputModeRef.current = mode;
@@ -285,6 +303,7 @@ export function LANHostTable({ host, config, onGameOver }: LANHostTableProps) {
         const remaining = state.players.filter(p => !p.isEliminated);
         if (remaining.length <= 1 && !gameOverRef.current) {
           gameOverRef.current = true;
+          settleEscrow(state.players.map(p => ({ seatIndex: p.seatIndex, chips: p.chips })));
           host.sendGameOver('Tournament complete', state.players.map(p => ({
             seatIndex: p.seatIndex, name: p.name, chips: p.chips,
           })));
@@ -294,6 +313,7 @@ export function LANHostTable({ host, config, onGameOver }: LANHostTableProps) {
 
         if (hostPlayer.isEliminated && !gameOverRef.current) {
           gameOverRef.current = true;
+          settleEscrow(state.players.map(p => ({ seatIndex: p.seatIndex, chips: p.chips })));
           host.sendGameOver('Host eliminated', state.players.map(p => ({
             seatIndex: p.seatIndex, name: p.name, chips: p.chips,
           })));
@@ -320,6 +340,7 @@ export function LANHostTable({ host, config, onGameOver }: LANHostTableProps) {
       // Host busted (cash/headsup)
       if (hostPlayer.chips === 0 && !gameOverRef.current) {
         gameOverRef.current = true;
+        settleEscrow(state.players.map(p => ({ seatIndex: p.seatIndex, chips: p.chips })));
         host.sendGameOver('Game over', state.players.map(p => ({
           seatIndex: p.seatIndex, name: p.name, chips: p.chips,
         })));
@@ -406,6 +427,7 @@ export function LANHostTable({ host, config, onGameOver }: LANHostTableProps) {
       <Box justifyContent="center" marginBottom={1}>
         <Text bold color="cyan">
           [LAN Host - {lanMode.charAt(0).toUpperCase() + lanMode.slice(1)}]
+          {isRealMoney && <Text color="yellow"> [USDC]</Text>}
           {' '}<Text dimColor>({connectedCount + 1}/{config.playerCount} players)</Text>
         </Text>
       </Box>
