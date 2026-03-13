@@ -3,6 +3,7 @@ import { Box, Text, useInput, useApp } from 'ink';
 import chalk from 'chalk';
 import figlet from 'figlet';
 import type { GameState } from '../engine/types.js';
+import { formatChips } from '../engine/chip-format.js';
 
 interface TournamentResultsProps {
   state: GameState;
@@ -71,7 +72,7 @@ export function TournamentResults({ state, onPlayAgain }: TournamentResultsProps
               {posColor(`${entry.position}${getOrdinal(entry.position)}`)}
               {' '}
               {entry.name}
-              {entry.chips > 0 ? chalk.yellow(` $${entry.chips}`) : chalk.dim(' $0')}
+              {entry.chips > 0 ? chalk.yellow(` ${formatChips(entry.chips)}`) : chalk.dim(` ${formatChips(0)}`)}
               {medal}
             </Text>
           );

@@ -3,6 +3,7 @@ import { Box, Text, useInput, useApp } from 'ink';
 import chalk from 'chalk';
 import figlet from 'figlet';
 import type { GameState } from '../engine/types.js';
+import { formatChips } from '../engine/chip-format.js';
 
 interface GameOverScreenProps {
   state: GameState;
@@ -57,17 +58,17 @@ export function GameOverScreen({ state, onPlayAgain }: GameOverScreenProps) {
         <Box height={1} />
         {state.playerCount <= 2 ? (
           <Text>
-            Final chips: {chalk.green(`You $${state.players[0]!.chips}`)}
+            Final chips: {chalk.green(`You ${formatChips(state.players[0]!.chips)}`)}
             {'  '}
-            {chalk.red(`${state.players[1]!.name} $${state.players[1]!.chips}`)}
+            {chalk.red(`${state.players[1]!.name} ${formatChips(state.players[1]!.chips)}`)}
           </Text>
         ) : (
           <Box flexDirection="column" alignItems="center">
             <Text bold>Final Standings:</Text>
             {sortedPlayers.map((p, i) => (
               <Text key={p.seatIndex}>
-                {p.isHuman ? chalk.green(`${i + 1}. ${p.name} $${p.chips}`) :
-                             chalk.white(`${i + 1}. ${p.name} $${p.chips}`)}
+                {p.isHuman ? chalk.green(`${i + 1}. ${p.name} ${formatChips(p.chips)}`) :
+                             chalk.white(`${i + 1}. ${p.name} ${formatChips(p.chips)}`)}
               </Text>
             ))}
           </Box>

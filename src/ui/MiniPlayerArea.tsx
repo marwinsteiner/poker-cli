@@ -2,6 +2,7 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import chalk from 'chalk';
 import type { Player, ShowdownResult } from '../engine/types.js';
+import { formatChips } from '../engine/chip-format.js';
 
 interface MiniPlayerAreaProps {
   player: Player;
@@ -16,7 +17,7 @@ export function MiniPlayerArea({ player, positionLabel, isCurrent, isWinner, sho
     return (
       <Box>
         <Text strikethrough dimColor>
-          {player.name} $0 [OUT]
+          {player.name} {formatChips(0)} [OUT]
         </Text>
       </Box>
     );
@@ -39,7 +40,7 @@ export function MiniPlayerArea({ player, positionLabel, isCurrent, isWinner, sho
   if (showdownResult) {
     handText = chalk.green(` ${showdownResult.hand.name}`);
     if (showdownResult.potWinnings > 0) {
-      handText += chalk.yellow(` +$${showdownResult.potWinnings}`);
+      handText += chalk.yellow(` +${formatChips(showdownResult.potWinnings)}`);
     }
   }
 
@@ -49,7 +50,7 @@ export function MiniPlayerArea({ player, positionLabel, isCurrent, isWinner, sho
     <Box>
       <Text>
         {indicator}
-        {nameColor(player.name)} {chipColor(`$${player.chips}`)} {posTag}
+        {nameColor(player.name)} {chipColor(formatChips(player.chips))} {posTag}
         {statusText ? ` ${statusText}` : ''}
         {handText}
       </Text>

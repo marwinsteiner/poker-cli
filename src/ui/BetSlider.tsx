@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import chalk from 'chalk';
+import { formatChips } from '../engine/chip-format.js';
 
 interface BetSliderProps {
   minBet: number;
@@ -52,10 +53,10 @@ export function BetSlider({ minBet, maxBet, pot, bigBlind, isActive, onConfirm, 
 
   return (
     <Box flexDirection="column" alignItems="center" gap={0}>
-      <Text bold color="yellow">Raise Amount: ${amount}</Text>
+      <Text bold color="yellow">Raise Amount: {formatChips(amount)}</Text>
       <Text>[{bar}]</Text>
       <Text dimColor>
-        {`Min: $${minBet}  Max: $${maxBet}`}
+        {`Min: ${formatChips(minBet)}  Max: ${formatChips(maxBet)}`}
       </Text>
       <Text dimColor>
         [1] Half pot  [2] 3/4 pot  [3] Pot  [4] All-in

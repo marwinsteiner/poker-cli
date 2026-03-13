@@ -7,6 +7,7 @@ import { getAIAction } from '../ai/ai-player.js';
 import { getPositionLabel } from '../engine/positions.js';
 import { getTotalPot } from '../engine/side-pots.js';
 import { getLLMDecision } from '../llm/claude.js';
+import { formatChips } from '../engine/chip-format.js';
 import { MiniPlayerArea } from './MiniPlayerArea.js';
 import { PlayerArea } from './PlayerArea.js';
 import { CommunityCards } from './CommunityCards.js';
@@ -402,7 +403,7 @@ export function MultiPlayerTable({ state, dispatch, onGameOver, config }: MultiP
           {state.showdownResults.filter(r => r.potWinnings > 0).map(r => (
             <Text key={r.seatIndex} bold color="green">
               {state.players[r.seatIndex]!.name}: {r.hand.name}
-              {r.potWinnings > 0 ? ` (+$${r.potWinnings})` : ''}
+              {r.potWinnings > 0 ? ` (+${formatChips(r.potWinnings)})` : ''}
             </Text>
           ))}
         </Box>

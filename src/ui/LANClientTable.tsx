@@ -4,6 +4,7 @@ import chalk from 'chalk';
 import type { PlayerAction, AvailableAction, GameConfig } from '../engine/types.js';
 import { getPositionLabel } from '../engine/positions.js';
 import { getTotalPot } from '../engine/side-pots.js';
+import { formatChips } from '../engine/chip-format.js';
 import { MiniPlayerArea } from './MiniPlayerArea.js';
 import { PlayerArea } from './PlayerArea.js';
 import { CommunityCards } from './CommunityCards.js';
@@ -219,7 +220,7 @@ export function LANClientTable({ client, mySeat, config, onGameOver }: LANClient
           {gameState.showdownResults.filter(r => r.potWinnings > 0).map(r => (
             <Text key={r.seatIndex} bold color="green">
               {gameState.players[r.seatIndex]!.name}: {r.hand.name}
-              {r.potWinnings > 0 ? ` (+$${r.potWinnings})` : ''}
+              {r.potWinnings > 0 ? ` (+${formatChips(r.potWinnings)})` : ''}
             </Text>
           ))}
         </Box>

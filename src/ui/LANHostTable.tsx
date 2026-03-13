@@ -7,6 +7,7 @@ import { getAIAction } from '../ai/ai-player.js';
 import { getPositionLabel } from '../engine/positions.js';
 import { getTotalPot } from '../engine/side-pots.js';
 import { createLANState, gameReducer } from '../engine/game-state.js';
+import { formatChips } from '../engine/chip-format.js';
 import { useBlindClock } from '../hooks/useBlindClock.js';
 import { useActionClock } from '../hooks/useActionClock.js';
 import { MiniPlayerArea } from './MiniPlayerArea.js';
@@ -462,7 +463,7 @@ export function LANHostTable({ host, config, onGameOver }: LANHostTableProps) {
           {gameState.showdownResults.filter(r => r.potWinnings > 0).map(r => (
             <Text key={r.seatIndex} bold color="green">
               {gameState.players[r.seatIndex]!.name}: {r.hand.name}
-              {r.potWinnings > 0 ? ` (+$${r.potWinnings})` : ''}
+              {r.potWinnings > 0 ? ` (+${formatChips(r.potWinnings)})` : ''}
             </Text>
           ))}
         </Box>

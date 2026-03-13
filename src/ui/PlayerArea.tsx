@@ -2,6 +2,7 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import chalk from 'chalk';
 import type { Player } from '../engine/types.js';
+import { formatChips } from '../engine/chip-format.js';
 import { HandDisplay } from './HandDisplay.js';
 
 interface PlayerAreaProps {
@@ -22,7 +23,7 @@ export function PlayerArea({ player, isDealer, showCards, isWinner, positionBadg
   return (
     <Box flexDirection="column" alignItems="center" gap={0}>
       <Text>{nameColor(player.name)}{badge}</Text>
-      <Text>{chipColor(`Chips: $${player.chips}`)}</Text>
+      <Text>{chipColor(`Chips: ${formatChips(player.chips)}`)}</Text>
       {player.holeCards.length > 0 && (
         <Box marginTop={0}>
           <HandDisplay
