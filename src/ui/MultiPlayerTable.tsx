@@ -382,6 +382,7 @@ export function MultiPlayerTable({ state, dispatch, onGameOver, config }: MultiP
               isCurrent={state.currentPlayerIndex === p.seatIndex && !state.isHandComplete}
               isWinner={isWinner}
               showdownResult={showdownResult}
+              showCards={showdownRevealed && !p.hasFolded}
             />
           );
         })}
