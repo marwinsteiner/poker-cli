@@ -200,6 +200,7 @@ export function LANClientTable({ client, mySeat, config, onGameOver }: LANClient
               isCurrent={gameState.currentPlayerIndex === p.seatIndex && !gameState.isHandComplete}
               isWinner={isWinner}
               showdownResult={showdownResult}
+              showCards={showdownRevealed && !p.hasFolded}
             />
           );
         })}
